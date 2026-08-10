@@ -24,7 +24,7 @@ export class AliexpressConnector implements MarketplaceConnector {
       status: 'ok',
       marketplace: this.name,
       enabled: this.enabled,
-      message: this.enabled ? 'AliExpress API ready' : 'AliExpress operating in Mock mode',
+      message: this.enabled ? 'AliExpress Open Platform API configured' : 'AliExpress operating in explicit Mock mode',
       latencyMs: 15
     };
   }
@@ -35,26 +35,14 @@ export class AliexpressConnector implements MarketplaceConnector {
       {
         marketplace: this.name,
         externalId: 'ali-2001',
-        title: 'Mini Projetor Portátil Magcubic HY300 4K Android 11 Wi-Fi 6',
+        title: '[Mock] Mini Projetor Portátil Magcubic HY300 4K Android 11 Wi-Fi 6',
         brand: 'Magcubic',
         category: 'Projetores',
         description: 'Projetor LED inteligente portátil com alto-falante integrado e rotação 180°.',
         imageUrl: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&auto=format&fit=crop&q=80',
         productUrl: 'https://aliexpress.com/item/10050012345.html',
-        rating: 4.9,
-        reviewCount: 5200
-      },
-      {
-        marketplace: this.name,
-        externalId: 'ali-2002',
-        title: 'Teclado Mecânico Gamer RGB 60% Switches Azuis Hot-Swap',
-        brand: 'Maching',
-        category: 'Periféricos',
-        description: 'Teclado mecânico compacto retroiluminado RGB com cabo Type-C removível.',
-        imageUrl: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&auto=format&fit=crop&q=80',
-        productUrl: 'https://aliexpress.com/item/10050067890.html',
-        rating: 4.8,
-        reviewCount: 3400
+        rating: undefined,
+        reviewCount: undefined
       }
     ].slice(0, limit);
   }
@@ -66,38 +54,19 @@ export class AliexpressConnector implements MarketplaceConnector {
 
   async getOffers(input: OfferQuery): Promise<NormalizedOffer[]> {
     const productId = input.productId || 'ali-2001';
-    if (productId === 'ali-2002') {
-      return [
-        {
-          marketplace: this.name,
-          externalProductId: productId,
-          price: 129.9,
-          oldPrice: 289.0,
-          discountPercent: 55,
-          currency: 'BRL',
-          availability: 'IN_STOCK',
-          seller: 'Maching Official Store',
-          capturedAt: new Date().toISOString(),
-          couponCode: 'ALIEXPRESS10',
-          couponDiscount: 'R$ 10 OFF',
-          freeShipping: true
-        }
-      ];
-    }
-
     return [
       {
         marketplace: this.name,
         externalProductId: productId,
         price: 219.0,
-        oldPrice: 499.0,
-        discountPercent: 56,
+        oldPrice: undefined,
+        discountPercent: undefined,
         currency: 'BRL',
         availability: 'IN_STOCK',
         seller: 'Magcubic Official Store',
         capturedAt: new Date().toISOString(),
-        couponCode: 'ALIEXPRESS15',
-        couponDiscount: 'R$ 15 OFF',
+        couponCode: undefined,
+        couponDiscount: undefined,
         freeShipping: true
       }
     ];
@@ -106,6 +75,7 @@ export class AliexpressConnector implements MarketplaceConnector {
   async createAffiliateLink(input: AffiliateLinkInput): Promise<AffiliateLinkResult> {
     const trackingId = input.subId || env.ALIEXPRESS_TRACKING_ID || 'vancod_ali_aff';
     const affiliateUrl = `https://s.click.aliexpress.com/e/_${trackingId}`;
+
     return {
       originalUrl: input.originalUrl,
       affiliateUrl,

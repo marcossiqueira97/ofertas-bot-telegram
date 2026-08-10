@@ -32,6 +32,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
 
   /**
    * Fetches REAL live products directly from Mercado Livre official public API.
+   * REGRA DE OURO: Nunca inventa rating, reviewCount ou oldPrice se não existirem na API.
    */
   async searchProducts(input: SearchInput): Promise<NormalizedProduct[]> {
     const limit = input.limit || 5;
@@ -53,20 +54,20 @@ export class MercadoLivreConnector implements MarketplaceConnector {
           marketplace: this.name,
           externalId: item.id,
           title: item.title,
-          brand: item.attributes?.find((a: any) => a.id === 'BRAND')?.value_name || 'Mercado Livre',
-          category: item.category_id || 'Geral',
-          description: `Produto autêntico no Mercado Livre com garantia do vendedor.`,
+          brand: item.attributes?.find((a: any) => a.id === 'BRAND')?.value_name || undefined,
+          category: item.category_id || undefined,
+          description: item.title,
           imageUrl: item.thumbnail ? item.thumbnail.replace('http://', 'https://').replace('-I.jpg', '-O.jpg') : undefined,
           productUrl: item.permalink,
-          rating: 4.8,
-          reviewCount: item.installments?.quantity ? item.installments.quantity * 150 : 320
+          rating: item.reviews?.rating_average ?? undefined,
+          reviewCount: item.reviews?.total ?? undefined
         }));
       }
     } catch (err) {
       // Degrade gracefully if offline
     }
 
-    // Fallback if offline/network error
+    // Fallback if offline/network error (Modo Mock explícito)
     return [
       {
         marketplace: this.name,
@@ -77,8 +78,8 @@ export class MercadoLivreConnector implements MarketplaceConnector {
         description: 'Fritadeira elétrica Air Fryer com cuba antiaderente e timer.',
         imageUrl: 'https://images.unsplash.com/photo-1585515320310-259814833e62?w=600&auto=format&fit=crop&q=80',
         productUrl: 'https://produto.mercadolivre.com.br/MLB3456789',
-        rating: 4.7,
-        reviewCount: 3100
+        rating: undefined,
+        reviewCount: undefined
       }
     ].slice(0, limit);
   }
@@ -92,13 +93,13 @@ export class MercadoLivreConnector implements MarketplaceConnector {
           marketplace: this.name,
           externalId: item.id,
           title: item.title,
-          brand: 'Mercado Livre',
-          category: item.category_id,
+          brand: item.attributes?.find((a: any) => a.id === 'BRAND')?.value_name || undefined,
+          category: item.category_id || undefined,
           description: item.title,
           imageUrl: item.thumbnail ? item.thumbnail.replace('http://', 'https://') : undefined,
           productUrl: item.permalink,
-          rating: 4.8,
-          reviewCount: 500
+          rating: item.reviews?.rating_average ?? undefined,
+          reviewCount: item.reviews?.total ?? undefined
         };
       }
     } catch (e) {}
@@ -114,8 +115,9 @@ export class MercadoLivreConnector implements MarketplaceConnector {
         if (res.ok) {
           const item = await res.json();
           const price = item.price;
-          const oldPrice = item.original_price || price * 1.25;
-          const discountPercent = oldPrice > price ? Math.round(((oldPrice - price) / oldPrice) * 100) : 0;
+          // REGRA DE OURO: Se original_price for null/undefined, não inventa multiplicador!
+          const oldPrice = item.original_price ?? undefined;
+          const discountPercent = oldPrice && oldPrice > price ? Math.round(((oldPrice - price) / oldPrice) * 100) : undefined;
 
           return [
             {
@@ -126,9 +128,9 @@ export class MercadoLivreConnector implements MarketplaceConnector {
               discountPercent,
               currency: 'BRL',
               availability: item.status === 'active' ? 'IN_STOCK' : 'OUT_OF_STOCK',
-              seller: 'Mercado Livre Vendedor Oficial',
+              seller: item.seller_id ? `Vendedor ${item.seller_id}` : undefined,
               capturedAt: new Date().toISOString(),
-              freeShipping: item.shipping?.free_shipping || false
+              freeShipping: item.shipping?.free_shipping ?? false
             }
           ];
         }
@@ -140,14 +142,14 @@ export class MercadoLivreConnector implements MarketplaceConnector {
         marketplace: this.name,
         externalProductId: input.productId || 'MLB3456789',
         price: 249.9,
-        oldPrice: 399.9,
-        discountPercent: 37,
+        oldPrice: undefined,
+        discountPercent: undefined,
         currency: 'BRL',
         availability: 'IN_STOCK',
         seller: 'Loja Oficial Mondial',
         capturedAt: new Date().toISOString(),
-        couponCode: 'MONDIAL20',
-        couponDiscount: 'R$ 20 OFF',
+        couponCode: undefined,
+        couponDiscount: undefined,
         freeShipping: true
       }
     ];

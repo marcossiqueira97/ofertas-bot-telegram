@@ -24,7 +24,7 @@ export class MagaluConnector implements MarketplaceConnector {
       status: 'ok',
       marketplace: this.name,
       enabled: this.enabled,
-      message: this.enabled ? 'Magalu API ready' : 'Magalu operating in Mock mode',
+      message: this.enabled ? 'Magalu Magazine Você Store API configured' : 'Magalu operating in explicit Mock mode',
       latencyMs: 16
     };
   }
@@ -35,14 +35,14 @@ export class MagaluConnector implements MarketplaceConnector {
       {
         marketplace: this.name,
         externalId: 'mgl-5001',
-        title: 'Smart TV 50" 4K UHD Samsung Crystal CU7700 Wi-Fi Bluetooth',
+        title: '[Mock] Smart TV 50" 4K UHD Samsung Crystal CU7700 Wi-Fi Bluetooth',
         brand: 'Samsung',
         category: 'TV e Vídeo',
         description: 'Smart TV 50 polegadas 4K com processador Crystal 4K, Gaming Hub e Alexa integrada.',
         imageUrl: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=600&auto=format&fit=crop&q=80',
         productUrl: 'https://magazineluiza.com.br/p/mgl-5001',
-        rating: 4.8,
-        reviewCount: 4200
+        rating: undefined,
+        reviewCount: undefined
       }
     ].slice(0, limit);
   }
@@ -58,23 +58,30 @@ export class MagaluConnector implements MarketplaceConnector {
         marketplace: this.name,
         externalProductId: input.productId || 'mgl-5001',
         price: 2199.0,
-        oldPrice: 2999.0,
-        discountPercent: 26,
+        oldPrice: undefined,
+        discountPercent: undefined,
         currency: 'BRL',
         availability: 'IN_STOCK',
         seller: 'Magazine Luiza',
         capturedAt: new Date().toISOString(),
-        couponCode: 'MAGALU200',
-        couponDiscount: 'R$ 200 OFF',
+        couponCode: undefined,
+        couponDiscount: undefined,
         freeShipping: true
       }
     ];
   }
 
+  /**
+   * Link de afiliado Magazine Você.
+   * Se MAGALU_STORE_NAME estiver configurado nas ENVs, gera a URL da loja do parceiro.
+   */
   async createAffiliateLink(input: AffiliateLinkInput): Promise<AffiliateLinkResult> {
-    const storeName = env.MAGALU_STORE_NAME || 'magazinevancod';
+    const storeName = env.MAGALU_STORE_NAME;
     const productId = input.subId || 'mgl-5001';
-    const affiliateUrl = `https://www.magazinevoce.com.br/${storeName}/p/${productId}`;
+    const affiliateUrl = storeName
+      ? `https://www.magazinevoce.com.br/${storeName}/p/${productId}`
+      : input.originalUrl;
+
     return {
       originalUrl: input.originalUrl,
       affiliateUrl,

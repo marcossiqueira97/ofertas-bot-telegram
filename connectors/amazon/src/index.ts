@@ -24,7 +24,7 @@ export class AmazonConnector implements MarketplaceConnector {
       status: 'ok',
       marketplace: this.name,
       enabled: this.enabled,
-      message: this.enabled ? 'Amazon Creators API ready' : 'Amazon operating in Mock mode',
+      message: this.enabled ? 'Amazon Creators PA-API configured' : 'Amazon operating in explicit Mock mode',
       latencyMs: 18
     };
   }
@@ -35,14 +35,14 @@ export class AmazonConnector implements MarketplaceConnector {
       {
         marketplace: this.name,
         externalId: 'B09B2W722X',
-        title: 'Echo Dot 5ª Geração com Alexa | Smart Speaker Som de Alta Definição',
+        title: '[Mock] Echo Dot 5ª Geração com Alexa | Smart Speaker',
         brand: 'Amazon',
         category: 'Dispositivos Amazon',
         description: 'O Echo Dot com o melhor som já lançado e controle por voz para casa inteligente.',
         imageUrl: 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600&auto=format&fit=crop&q=80',
         productUrl: 'https://amazon.com.br/dp/B09B2W722X',
-        rating: 4.8,
-        reviewCount: 15400
+        rating: undefined,
+        reviewCount: undefined
       }
     ].slice(0, limit);
   }
@@ -58,8 +58,8 @@ export class AmazonConnector implements MarketplaceConnector {
         marketplace: this.name,
         externalProductId: input.productId || 'B09B2W722X',
         price: 269.1,
-        oldPrice: 429.0,
-        discountPercent: 37,
+        oldPrice: undefined,
+        discountPercent: undefined,
         currency: 'BRL',
         availability: 'IN_STOCK',
         seller: 'Amazon.com.br',
@@ -72,6 +72,7 @@ export class AmazonConnector implements MarketplaceConnector {
   async createAffiliateLink(input: AffiliateLinkInput): Promise<AffiliateLinkResult> {
     const associateTag = input.subId || env.AMAZON_ASSOCIATE_TAG || 'vancod-20';
     const affiliateUrl = `${input.originalUrl}?tag=${associateTag}`;
+
     return {
       originalUrl: input.originalUrl,
       affiliateUrl,
