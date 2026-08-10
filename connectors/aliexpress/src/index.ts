@@ -7,12 +7,21 @@ import {
   OfferQuery,
   NormalizedOffer,
   AffiliateLinkInput,
-  AffiliateLinkResult
+  AffiliateLinkResult,
+  ConnectorCapabilities
 } from '@vancod/types';
 import { env } from '@vancod/config';
 
 export class AliexpressConnector implements MarketplaceConnector {
   readonly name: MarketplaceName = 'aliexpress';
+  readonly capabilities: ConnectorCapabilities = {
+    productSearch: true,
+    productDetails: true,
+    price: true,
+    affiliateLink: false,
+    coupons: false,
+    salesTracking: false
+  };
   private enabled: boolean;
 
   constructor(enabled = false) {

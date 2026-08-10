@@ -99,8 +99,8 @@ model ProductPrice {
   id        String   @id @default(uuid())
   productId String
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  price     Float
-  oldPrice  Float?
+  price     Decimal  @db.Decimal(10, 2)
+  oldPrice  Decimal? @db.Decimal(10, 2)
   currency  String   @default("BRL")
   capturedAt DateTime @default(now())
 }
@@ -109,16 +109,16 @@ model Offer {
   id              String      @id @default(uuid())
   productId       String
   product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  price           Float
-  oldPrice        Float?
-  discountPercent Float?
+  price           Decimal     @db.Decimal(10, 2)
+  oldPrice        Decimal?    @db.Decimal(10, 2)
+  discountPercent Decimal?    @db.Decimal(5, 2)
   currency        String      @default("BRL")
   availability    String?
   seller          String?
   couponCode      String?
   couponDiscount  String?
   freeShipping    Boolean     @default(false)
-  score           Float       @default(0)
+  score           Decimal     @default(0) @db.Decimal(5, 2)
   status          OfferStatus @default(PENDING)
   rejectionReason String?
   capturedAt      DateTime    @default(now())
@@ -208,7 +208,7 @@ model PriceAlert {
   id          String   @id @default(uuid())
   offerId     String
   offer       Offer    @relation(fields: [offerId], references: [id])
-  targetPrice Float
+  targetPrice Decimal  @db.Decimal(10, 2)
   triggered   Boolean  @default(false)
   createdAt   DateTime @default(now())
 }

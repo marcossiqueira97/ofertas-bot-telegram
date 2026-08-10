@@ -7,12 +7,21 @@ import {
   OfferQuery,
   NormalizedOffer,
   AffiliateLinkInput,
-  AffiliateLinkResult
+  AffiliateLinkResult,
+  ConnectorCapabilities
 } from '@vancod/types';
 import { env } from '@vancod/config';
 
 export class MagaluConnector implements MarketplaceConnector {
   readonly name: MarketplaceName = 'magalu';
+  readonly capabilities: ConnectorCapabilities = {
+    productSearch: true,
+    productDetails: true,
+    price: true,
+    affiliateLink: false,
+    coupons: false,
+    salesTracking: false
+  };
   private enabled: boolean;
 
   constructor(enabled = false) {

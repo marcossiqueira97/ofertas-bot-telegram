@@ -31,10 +31,22 @@ export async function withResilience<T>(
   const shouldRetry =
     options.shouldRetry ??
     ((err: any) => {
-      // Retry on TimeoutError or network errors by default
+      // Abort immediately without retry on client error HTTP status (400, 401, 403, 404, 422)
+      const status = err?.status || err?.response?.status;
+      if (status && [400, 401, 403, 404, 422].includes(status)) {
+        return false;
+      }
+
+      // Retry on 408 (Timeout), 429 (RateLimit), 5xx (Server Error), TimeoutError or network errors
+      if (status && [408, 429, 500, 502, 503, 504].includes(status)) {
+        return true;
+      }
+
       if (err instanceof TimeoutError) return true;
       if (err instanceof RateLimitError) return true;
-      if (err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') return true;
+      if (err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND') return true;
+
+      // Default to false for non-retryable errors
       return false;
     });
 

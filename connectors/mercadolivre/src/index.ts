@@ -7,13 +7,22 @@ import {
   OfferQuery,
   NormalizedOffer,
   AffiliateLinkInput,
-  AffiliateLinkResult
+  AffiliateLinkResult,
+  ConnectorCapabilities
 } from '@vancod/types';
 import { env } from '@vancod/config';
 import { withResilience } from '@vancod/affiliate-core';
 
 export class MercadoLivreConnector implements MarketplaceConnector {
   readonly name: MarketplaceName = 'mercadolivre';
+  readonly capabilities: ConnectorCapabilities = {
+    productSearch: true,
+    productDetails: true,
+    price: true,
+    affiliateLink: true,
+    coupons: false,
+    salesTracking: false
+  };
   private enabled: boolean;
 
   constructor(enabled = true) {

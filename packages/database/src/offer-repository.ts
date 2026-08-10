@@ -81,7 +81,13 @@ export class OfferRepository {
       }
     });
 
-    return calculatePriceHistoryMetrics(currentPrice, snapshots);
+    return calculatePriceHistoryMetrics(
+      currentPrice,
+      snapshots.map((s) => ({
+        price: typeof s.price === 'number' ? s.price : Number(s.price),
+        capturedAt: s.capturedAt
+      }))
+    );
   }
 
   /**

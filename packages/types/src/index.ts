@@ -80,8 +80,18 @@ export interface AffiliateLinkResult {
   marketplace: MarketplaceName;
 }
 
+export interface ConnectorCapabilities {
+  productSearch: boolean;
+  productDetails: boolean;
+  price: boolean;
+  affiliateLink: boolean;
+  coupons: boolean;
+  salesTracking: boolean;
+}
+
 export interface MarketplaceConnector {
   readonly name: MarketplaceName;
+  readonly capabilities?: ConnectorCapabilities;
   healthCheck(): Promise<ConnectorHealth>;
   searchProducts(input: SearchInput): Promise<NormalizedProduct[]>;
   getProduct(id: string): Promise<NormalizedProduct | null>;
