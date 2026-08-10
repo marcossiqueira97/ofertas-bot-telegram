@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OfferRepository } from './offer-repository';
 import { prisma } from './index';
+import { Prisma } from '@prisma/client';
 
 vi.mock('./index', () => {
   return {
@@ -68,8 +69,8 @@ describe('OfferRepository', () => {
     vi.mocked(prisma.productPrice.create).mockResolvedValue({
       id: 'price-1',
       productId: 'prod-1',
-      price: 39.9,
-      oldPrice: 99.9,
+      price: new Prisma.Decimal(39.9),
+      oldPrice: new Prisma.Decimal(99.9),
       currency: 'BRL',
       capturedAt: new Date()
     });
@@ -95,16 +96,16 @@ describe('OfferRepository', () => {
     vi.mocked(prisma.offer.create).mockResolvedValue({
       id: 'offer-1',
       productId: 'prod-1',
-      price: 39.9,
-      oldPrice: 99.9,
-      discountPercent: 60,
+      price: new Prisma.Decimal(39.9),
+      oldPrice: new Prisma.Decimal(99.9),
+      discountPercent: new Prisma.Decimal(60),
       currency: 'BRL',
       availability: 'IN_STOCK',
       seller: 'Loja',
       couponCode: null,
       couponDiscount: null,
       freeShipping: true,
-      score: 88,
+      score: new Prisma.Decimal(88),
       status: 'AUTO_APPROVED',
       rejectionReason: null,
       capturedAt: new Date(),
@@ -112,7 +113,7 @@ describe('OfferRepository', () => {
     });
 
     const offerData = {
-      marketplace: 'shopee',
+      marketplace: 'shopee' as const,
       externalProductId: 'shp-1001',
       price: 39.9,
       currency: 'BRL',

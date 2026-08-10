@@ -82,7 +82,7 @@ export function calculatePriceHistoryMetrics(
 ): PriceHistoryMetrics {
   if (!priceSnapshots || priceSnapshots.length === 0) {
     return {
-      isHistoricalLow: true
+      isHistoricalLow: false
     };
   }
 
@@ -148,8 +148,8 @@ export function calculateOfferScore(
     realDiscountScore = Math.min(30, (discount / 60) * 30);
   }
 
-  // 2. History Score (max 20)
-  let historyScore = 10; // Default when no history
+  // 2. History Score (max 20) - Sem histórico comprovado, 0 pontos
+  let historyScore = 0;
   if (historyMetrics?.isHistoricalLow) {
     historyScore = 20;
   } else if (
@@ -160,7 +160,6 @@ export function calculateOfferScore(
   }
 
   // 3. Absolute Price Score (max 15)
-  // Highly accessible products (R$ 10 - R$ 300) score better for impulse buy
   let absolutePriceScore = 10;
   if (offer.price <= 50) absolutePriceScore = 15;
   else if (offer.price <= 200) absolutePriceScore = 13;
@@ -183,14 +182,14 @@ export function calculateOfferScore(
     else reviewVolumeScore = 2;
   }
 
-  // 6. Commission Score (max 5)
-  const commissionScore = 3; // default medium score
+  // 6. Commission Score (max 5) - Sem dados de comissão, 0 pontos
+  const commissionScore = 0;
 
-  // 7. Popularity Score (max 5)
-  const popularityScore = 3;
+  // 7. Popularity Score (max 5) - Sem dados de popularidade, 0 pontos
+  const popularityScore = 0;
 
-  // 8. Shipping Score (max 5)
-  let shippingScore = 2;
+  // 8. Shipping Score (max 5) - Se não houver confirmação de frete grátis, 0 pontos
+  let shippingScore = 0;
   if (offer.freeShipping) {
     shippingScore = 5;
   }

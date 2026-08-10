@@ -61,7 +61,7 @@ export class TelegramPublisherService {
       );
       return {
         published: true,
-        messageId: Math.floor(Math.random() * 100000),
+        messageId: 0,
         mock: true
       };
     }

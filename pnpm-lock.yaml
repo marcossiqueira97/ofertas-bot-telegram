@@ -94,12 +94,18 @@ importers:
         specifier: ^4.16.3
         version: 4.16.3(supports-color@8.1.1)
     devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
       tsup:
         specifier: ^8.3.6
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(supports-color@8.1.1)(tsx@4.23.11)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(supports-color@8.1.1)(terser@5.49.2)(tsx@4.23.11)
 
   apps/web:
     dependencies:
@@ -143,12 +149,30 @@ importers:
       '@vancod/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@vancod/connector-aliexpress':
+        specifier: workspace:*
+        version: link:../../connectors/aliexpress
+      '@vancod/connector-amazon':
+        specifier: workspace:*
+        version: link:../../connectors/amazon
+      '@vancod/connector-magalu':
+        specifier: workspace:*
+        version: link:../../connectors/magalu
+      '@vancod/connector-mercadolivre':
+        specifier: workspace:*
+        version: link:../../connectors/mercadolivre
+      '@vancod/connector-shopee':
+        specifier: workspace:*
+        version: link:../../connectors/shopee
       '@vancod/database':
         specifier: workspace:*
         version: link:../../packages/database
       '@vancod/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@vancod/telegram-bot':
+        specifier: workspace:*
+        version: link:../telegram-bot
       '@vancod/types':
         specifier: workspace:*
         version: link:../../packages/types
