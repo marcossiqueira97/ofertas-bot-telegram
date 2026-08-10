@@ -282,10 +282,14 @@ async function startBot() {
         return;
       }
 
-      const copy = lastApproved.aiGenerations[0];
-      const ctaUrl = lastApproved.affiliateLinks[0]?.affiliateUrl || lastApproved.product.productUrl;
+      const affiliateUrl = lastApproved.affiliateLinks[0]?.affiliateUrl;
+      if (!affiliateUrl || affiliateUrl === 'NOT_AVAILABLE') {
+        ctx.reply('Nenhum dado com link de afiliado disponível para publicação.');
+        return;
+      }
 
-      const post = formatTelegramPost(copy.headline, copy.body, ctaUrl);
+      const copy = lastApproved.aiGenerations[0];
+      const post = formatTelegramPost(copy.headline, copy.body, affiliateUrl);
       await ctx.reply(post.text, { parse_mode: 'Markdown', ...post.keyboard });
     } catch {
       ctx.reply('Nenhum dado disponível.');

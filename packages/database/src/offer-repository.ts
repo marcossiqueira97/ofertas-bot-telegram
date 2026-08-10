@@ -265,7 +265,7 @@ export class OfferRepository {
         headline,
         body,
         ctaUrl,
-        status: status === 'NOT_CONFIGURED' || status === 'FAILED' ? 'FAILED' : 'PUBLISHED'
+        status
       }
     });
   }

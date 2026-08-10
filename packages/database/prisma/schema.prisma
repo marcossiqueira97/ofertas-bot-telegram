@@ -24,6 +24,8 @@ enum PostStatus {
   SCHEDULED
   PUBLISHED
   FAILED
+  NOT_CONFIGURED
+  SKIPPED
 }
 
 model User {

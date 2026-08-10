@@ -29,15 +29,39 @@ describe('Affiliate Core Unit Tests', () => {
   });
 
   describe('calculatePriceHistoryMetrics', () => {
-    it('should correctly identify historical low', () => {
+    it('should return isHistoricalLow = false when history is empty', () => {
+      const metrics = calculatePriceHistoryMetrics(100, []);
+      expect(metrics.isHistoricalLow).toBe(false);
+    });
+
+    it('should return isHistoricalLow = true when current price (100) is strictly lower than previous snapshots (150, 120, 110)', () => {
+      const snapshots = [
+        { price: 150, capturedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) },
+        { price: 120, capturedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) },
+        { price: 110, capturedAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000) }
+      ];
+      const metrics = calculatePriceHistoryMetrics(100, snapshots);
+      expect(metrics.isHistoricalLow).toBe(true);
+      expect(metrics.lowestPrice30d).toBe(110);
+    });
+
+    it('should return isHistoricalLow = false when current price (100) is greater than previous minimum (90)', () => {
+      const snapshots = [
+        { price: 90, capturedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) },
+        { price: 100, capturedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) },
+        { price: 110, capturedAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000) }
+      ];
+      const metrics = calculatePriceHistoryMetrics(100, snapshots);
+      expect(metrics.isHistoricalLow).toBe(false);
+    });
+
+    it('should return isHistoricalLow = false when current price (100) is equal to previous minimum (100)', () => {
       const snapshots = [
         { price: 100, capturedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) },
-        { price: 120, capturedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) }
+        { price: 110, capturedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) }
       ];
-      const metrics = calculatePriceHistoryMetrics(80, snapshots);
-      expect(metrics.isHistoricalLow).toBe(true);
-      expect(metrics.lowestPrice7d).toBe(100);
-      expect(metrics.averagePrice30d).toBe(110);
+      const metrics = calculatePriceHistoryMetrics(100, snapshots);
+      expect(metrics.isHistoricalLow).toBe(false);
     });
   });
 

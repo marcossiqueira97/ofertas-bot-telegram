@@ -139,8 +139,8 @@ async function startWorkers() {
       const { productId, product, price, oldPrice } = job.data;
 
       try {
-        await OfferRepository.createPriceSnapshot(productId, price, oldPrice);
         const historyMetrics = await OfferRepository.getHistoricalMetricsForProduct(productId, price);
+        await OfferRepository.createPriceSnapshot(productId, price, oldPrice);
 
         await queues.scoring.add('score', {
           productId,

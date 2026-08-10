@@ -118,7 +118,7 @@ export function calculatePriceHistoryMetrics(
 
   const allHistoricalPrices = priceSnapshots.map((s) => s.price);
   const globalLowest = Math.min(...allHistoricalPrices);
-  const isHistoricalLow = currentPrice <= globalLowest;
+  const isHistoricalLow = currentPrice < globalLowest;
 
   return {
     lowestPrice7d,
