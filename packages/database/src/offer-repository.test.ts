@@ -17,7 +17,8 @@ vi.mock('./index', () => {
         findMany: vi.fn()
       },
       offer: {
-        create: vi.fn()
+        create: vi.fn(),
+        findFirst: vi.fn()
       },
       affiliateLink: {
         create: vi.fn()

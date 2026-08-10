@@ -84,6 +84,9 @@ importers:
       '@vancod/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@vancod/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@vancod/logger':
         specifier: workspace:*
         version: link:../../packages/logger

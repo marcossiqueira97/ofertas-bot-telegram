@@ -5,6 +5,7 @@ import { env } from '@vancod/config';
 import {
   calculateOfferScore,
   validateProductUrl,
+  validateOfferPolicy,
   ConnectorRegistry
 } from '@vancod/affiliate-core';
 import { createAiProvider } from '@vancod/ai';
@@ -38,21 +39,23 @@ export const QUEUES = {
   SCORING: 'offer-scoring',
   AFFILIATE_LINK: 'affiliate-link',
   AI_GENERATION: 'ai-generation',
+  POLICY_CHECK: 'policy-check',
   TELEGRAM_PUBLISH: 'telegram-publish'
 };
 
-// Queue producers for chaining
+// Queue producers for 8-step chained pipeline
 const queues = {
   normalization: new Queue(QUEUES.NORMALIZATION, { connection }),
   priceSnapshot: new Queue(QUEUES.PRICE_SNAPSHOT, { connection }),
   scoring: new Queue(QUEUES.SCORING, { connection }),
   affiliateLink: new Queue(QUEUES.AFFILIATE_LINK, { connection }),
   aiGeneration: new Queue(QUEUES.AI_GENERATION, { connection }),
+  policyCheck: new Queue(QUEUES.POLICY_CHECK, { connection }),
   telegramPublish: new Queue(QUEUES.TELEGRAM_PUBLISH, { connection })
 };
 
 async function startWorkers() {
-  logger.info('Initializing BullMQ workers for full 7-step chained pipeline...');
+  logger.info('Initializing BullMQ workers for full 8-step chained pipeline with deterministic policy checks...');
 
   try {
     await connection.connect();
@@ -61,7 +64,7 @@ async function startWorkers() {
     logger.warn('Redis connection failed. Worker running in fallback mode.');
   }
 
-  // 1. INGESTION WORKER -> Upserts Product & Triggers Normalization Queue
+  // 1. INGESTION WORKER -> Upserts Product ONLY. Does NOT create Price Snapshot here.
   new Worker(
     QUEUES.INGESTION,
     async (job: Job) => {
@@ -69,7 +72,7 @@ async function startWorkers() {
       const { product, price, oldPrice } = job.data as { product: NormalizedProduct; price: number; oldPrice?: number };
 
       try {
-        const { product: dbProduct } = await OfferRepository.upsertProductAndSnapshot(product, price, oldPrice);
+        const { product: dbProduct } = await OfferRepository.upsertProductOnly(product);
 
         await queues.normalization.add('normalize', {
           productId: dbProduct.id,
@@ -81,7 +84,7 @@ async function startWorkers() {
         const durationMs = Date.now() - startTime;
         logger.info(
           { jobId: job.id, stage: 'INGESTION', marketplace: product.marketplace, productId: dbProduct.id, status: 'SUCCESS', durationMs },
-          'Step 1: Product ingested and sent to normalization queue'
+          'Step 1: Product ingested into DB (without snapshot) and sent to normalization queue'
         );
 
         return { productId: dbProduct.id, status: 'INGESTED' };
@@ -128,7 +131,7 @@ async function startWorkers() {
     { connection }
   );
 
-  // 3. PRICE SNAPSHOT WORKER -> Calculates 90d Price History Metrics & Triggers Scoring Queue
+  // 3. PRICE SNAPSHOT WORKER -> Creates ProductPrice in DB & Calculates 90d Price History Metrics
   new Worker(
     QUEUES.PRICE_SNAPSHOT,
     async (job: Job) => {
@@ -136,6 +139,7 @@ async function startWorkers() {
       const { productId, product, price, oldPrice } = job.data;
 
       try {
+        await OfferRepository.createPriceSnapshot(productId, price, oldPrice);
         const historyMetrics = await OfferRepository.getHistoricalMetricsForProduct(productId, price);
 
         await queues.scoring.add('score', {
@@ -149,7 +153,7 @@ async function startWorkers() {
         const durationMs = Date.now() - startTime;
         logger.info(
           { jobId: job.id, stage: 'PRICE_SNAPSHOT', productId, isHistoricalLow: historyMetrics.isHistoricalLow, status: 'SUCCESS', durationMs },
-          'Step 3: Price snapshot processed and sent to scoring queue'
+          'Step 3: Price snapshot recorded in DB and sent to scoring queue'
         );
 
         return { productId, historyMetrics, status: 'SNAPSHOT_RECORDED' };
@@ -185,7 +189,7 @@ async function startWorkers() {
         const durationMs = Date.now() - startTime;
         logger.info(
           { jobId: job.id, stage: 'SCORING', offerId: dbOffer.id, score: score.totalScore, action: score.action, status: 'SUCCESS', durationMs },
-          'Step 4: Offer scored and persisted in database'
+          'Step 4: Offer scored and persisted in database (Idempotent)'
         );
 
         if (score.action === 'AUTO_PUBLISH') {
@@ -194,7 +198,8 @@ async function startWorkers() {
             productId,
             product,
             offer: normalizedOffer,
-            score
+            score,
+            historyMetrics
           });
         }
 
@@ -207,41 +212,55 @@ async function startWorkers() {
     { connection }
   );
 
-  // 5. AFFILIATE LINK WORKER -> Checks Connector Capabilities & Triggers AI Generation Queue
+  // 5. AFFILIATE LINK WORKER -> Checks Connector Capabilities (Does NOT forge fake links)
   new Worker(
     QUEUES.AFFILIATE_LINK,
     async (job: Job) => {
       const startTime = Date.now();
-      const { offerId, product, offer } = job.data;
+      const { offerId, product, offer, score, historyMetrics } = job.data;
 
       try {
         const connector = registry.getConnector(product.marketplace);
-        let affiliateUrl = product.productUrl;
-        let isRealAffiliate = false;
+        let affiliateUrl = 'NOT_AVAILABLE';
+        let isAffiliateAvailable = false;
 
         if (connector && connector.capabilities?.affiliateLink && connector.createAffiliateLink) {
           const res = await connector.createAffiliateLink({ originalUrl: product.productUrl });
-          affiliateUrl = res.affiliateUrl;
-          isRealAffiliate = true;
+          if (res.affiliateUrl && res.affiliateUrl !== product.productUrl) {
+            affiliateUrl = res.affiliateUrl;
+            isAffiliateAvailable = true;
+          }
         }
 
-        const dbAffiliateLink = await OfferRepository.saveAffiliateLink(offerId, product.productUrl, affiliateUrl);
+        if (isAffiliateAvailable) {
+          await OfferRepository.saveAffiliateLink(offerId, product.productUrl, affiliateUrl);
+        }
+
+        const durationMs = Date.now() - startTime;
+        logger.info(
+          { jobId: job.id, stage: 'AFFILIATE_LINK', offerId, affiliateUrl, isAffiliateAvailable, status: 'SUCCESS', durationMs },
+          'Step 5: Affiliate link capability evaluated'
+        );
+
+        if (!isAffiliateAvailable) {
+          logger.warn(
+            { jobId: job.id, stage: 'AFFILIATE_LINK', offerId, marketplace: product.marketplace },
+            'Connector has no real affiliateLink capability or credentials configured. Halting publication for this offer.'
+          );
+          return { offerId, status: 'NOT_AVAILABLE', isAffiliateAvailable: false };
+        }
 
         await queues.aiGeneration.add('ai_copy', {
           offerId,
           product,
           offer,
+          score,
+          historyMetrics,
           affiliateUrl,
-          isRealAffiliate
+          isAffiliateAvailable
         });
 
-        const durationMs = Date.now() - startTime;
-        logger.info(
-          { jobId: job.id, stage: 'AFFILIATE_LINK', offerId, affiliateUrl, isRealAffiliate, status: 'SUCCESS', durationMs },
-          'Step 5: Affiliate link created and sent to AI copy queue'
-        );
-
-        return { affiliateLinkId: dbAffiliateLink.id, affiliateUrl, status: 'AFFILIATE_LINK_CREATED' };
+        return { offerId, affiliateUrl, isAffiliateAvailable: true, status: 'AFFILIATE_LINK_CREATED' };
       } catch (err: any) {
         logger.error({ jobId: job.id, stage: 'AFFILIATE_LINK', offerId, error: err.message }, 'Step 5 failed');
         throw err;
@@ -250,12 +269,12 @@ async function startWorkers() {
     { connection }
   );
 
-  // 6. AI GENERATION WORKER -> Generates Factual Copy & Triggers Telegram Publish Queue
+  // 6. AI GENERATION WORKER -> Generates Factual Copy & Triggers Policy Check Queue
   new Worker(
     QUEUES.AI_GENERATION,
     async (job: Job) => {
       const startTime = Date.now();
-      const { offerId, product, offer, affiliateUrl } = job.data;
+      const { offerId, product, offer, score, historyMetrics, affiliateUrl, isAffiliateAvailable } = job.data;
 
       try {
         const copy = await aiProvider.generateCopy({
@@ -272,18 +291,20 @@ async function startWorkers() {
 
         await OfferRepository.saveAiGeneration(offerId, aiProvider.name, 'Generate factual offer copy', copy);
 
-        await queues.telegramPublish.add('publish', {
+        await queues.policyCheck.add('policy_check', {
           offerId,
-          headline: copy.headline,
-          body: copy.body,
-          ctaUrl: affiliateUrl,
-          imageUrl: product.imageUrl
+          product,
+          offer,
+          copy,
+          affiliateUrl,
+          isAffiliateAvailable,
+          historyMetrics
         });
 
         const durationMs = Date.now() - startTime;
         logger.info(
           { jobId: job.id, stage: 'AI_GENERATION', offerId, headline: copy.headline, status: 'SUCCESS', durationMs },
-          'Step 6: AI factual copy generated and sent to Telegram publish queue'
+          'Step 6: AI factual copy generated and sent to policy check queue'
         );
 
         return { offerId, headline: copy.headline, status: 'AI_COPY_GENERATED' };
@@ -295,7 +316,61 @@ async function startWorkers() {
     { connection }
   );
 
-  // 7. TELEGRAM PUBLISHER WORKER -> Publishes via TelegramPublisherService & Persists TelegramPost
+  // 7. POLICY CHECK WORKER -> Deterministic validation before publication
+  new Worker(
+    QUEUES.POLICY_CHECK,
+    async (job: Job) => {
+      const startTime = Date.now();
+      const { offerId, product, offer, copy, affiliateUrl, isAffiliateAvailable, historyMetrics } = job.data;
+
+      try {
+        const policyCheck = validateOfferPolicy({
+          price: offer.price,
+          marketplace: product.marketplace,
+          affiliateUrl,
+          isAffiliateAvailable,
+          discountPercent: offer.discountPercent,
+          oldPrice: offer.oldPrice,
+          couponCode: offer.couponCode,
+          freeShipping: offer.freeShipping,
+          isHistoricalLow: historyMetrics?.isHistoricalLow,
+          headline: copy.headline,
+          body: copy.body
+        });
+
+        const durationMs = Date.now() - startTime;
+
+        if (!policyCheck.passed) {
+          logger.warn(
+            { jobId: job.id, stage: 'POLICY_CHECK', offerId, violations: policyCheck.violations, status: 'BLOCKED', durationMs },
+            'Step 7: Policy check BLOCKED offer publication due to factual or affiliate link violations'
+          );
+          return { offerId, passed: false, violations: policyCheck.violations, status: 'BLOCKED' };
+        }
+
+        await queues.telegramPublish.add('publish', {
+          offerId,
+          headline: copy.headline,
+          body: copy.body,
+          ctaUrl: affiliateUrl,
+          imageUrl: product.imageUrl
+        });
+
+        logger.info(
+          { jobId: job.id, stage: 'POLICY_CHECK', offerId, status: 'SUCCESS', durationMs },
+          'Step 7: Deterministic policy check passed cleanly'
+        );
+
+        return { offerId, passed: true, status: 'POLICY_PASSED' };
+      } catch (err: any) {
+        logger.error({ jobId: job.id, stage: 'POLICY_CHECK', offerId, error: err.message }, 'Step 7 failed');
+        throw err;
+      }
+    },
+    { connection }
+  );
+
+  // 8. TELEGRAM PUBLISHER WORKER -> Publishes via TelegramPublisherService & Records Status
   new Worker(
     QUEUES.TELEGRAM_PUBLISH,
     async (job: Job) => {
@@ -321,31 +396,53 @@ async function startWorkers() {
           channelId
         });
 
+        const targetChannel = channelId || env.TELEGRAM_CHANNEL_ID || '@vancod_ofertas_channel';
+
+        if (!pubResult.published || pubResult.mock || pubResult.status === 'NOT_CONFIGURED') {
+          await OfferRepository.saveTelegramPost(
+            offerId,
+            targetChannel,
+            headline,
+            body,
+            ctaUrl,
+            0,
+            'NOT_CONFIGURED'
+          );
+
+          const durationMs = Date.now() - startTime;
+          logger.warn(
+            { jobId: job.id, stage: 'TELEGRAM_PUBLISH', offerId, status: 'NOT_CONFIGURED', durationMs },
+            'Step 8: Telegram Bot token/channel not configured. Post recorded as NOT_CONFIGURED in DB.'
+          );
+          return { offerId, published: false, status: 'NOT_CONFIGURED' };
+        }
+
         const dbPost = await OfferRepository.saveTelegramPost(
           offerId,
-          channelId || env.TELEGRAM_CHANNEL_ID || '@vancod_ofertas_channel',
+          targetChannel,
           headline,
           body,
           ctaUrl,
-          pubResult.messageId
+          pubResult.messageId,
+          'PUBLISHED'
         );
 
         const durationMs = Date.now() - startTime;
         logger.info(
-          { jobId: job.id, stage: 'TELEGRAM_PUBLISH', offerId, messageId: pubResult.messageId, mock: pubResult.mock, status: 'SUCCESS', durationMs },
-          'Step 7: Offer published to Telegram channel and recorded in DB'
+          { jobId: job.id, stage: 'TELEGRAM_PUBLISH', offerId, messageId: pubResult.messageId, status: 'SUCCESS', durationMs },
+          'Step 8: Offer published to Telegram channel with real message_id and recorded in DB'
         );
 
-        return { postId: dbPost.id, messageId: pubResult.messageId, mock: pubResult.mock, status: 'PUBLISHED' };
+        return { postId: dbPost.id, messageId: pubResult.messageId, status: 'PUBLISHED' };
       } catch (err: any) {
-        logger.error({ jobId: job.id, stage: 'TELEGRAM_PUBLISH', offerId, error: err.message }, 'Step 7 failed');
+        logger.error({ jobId: job.id, stage: 'TELEGRAM_PUBLISH', offerId, error: err.message }, 'Step 8 failed');
         throw err;
       }
     },
     { connection }
   );
 
-  logger.info('All 7 BullMQ pipeline workers started and chained successfully.');
+  logger.info('All 8 BullMQ pipeline workers started and chained successfully.');
 }
 
 startWorkers().catch((err) => {

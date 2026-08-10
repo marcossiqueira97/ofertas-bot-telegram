@@ -12,6 +12,7 @@
   "dependencies": {
     "@vancod/affiliate-core": "workspace:*",
     "@vancod/config": "workspace:*",
+    "@vancod/database": "workspace:*",
     "@vancod/logger": "workspace:*",
     "@vancod/types": "workspace:*",
     "telegraf": "^4.16.3"

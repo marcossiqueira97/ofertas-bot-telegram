@@ -3,7 +3,8 @@ import {
   validateProductUrl,
   calculatePriceHistoryMetrics,
   calculateOfferScore,
-  generateProductDeduplicationKey
+  generateProductDeduplicationKey,
+  validateOfferPolicy
 } from './index';
 
 describe('Affiliate Core Unit Tests', () => {
@@ -69,4 +70,80 @@ describe('Affiliate Core Unit Tests', () => {
       expect(key).toBe('shopee:12345');
     });
   });
+
+  describe('validateOfferPolicy', () => {
+    it('should block offer if affiliateUrl is NOT_AVAILABLE or missing', () => {
+      const res = validateOfferPolicy({
+        price: 99.9,
+        marketplace: 'shopee',
+        affiliateUrl: 'NOT_AVAILABLE'
+      });
+      expect(res.passed).toBe(false);
+      expect(res.violations).toContain('Valid affiliate URL is required for automatic publication');
+    });
+
+    it('should block offer if copy claims discount without verified discount evidence', () => {
+      const res = validateOfferPolicy({
+        price: 99.9,
+        marketplace: 'shopee',
+        affiliateUrl: 'https://aff.shopee.com/123',
+        headline: '🔥 OFERTA IMPERDÍVEL: Produto X (50% OFF)'
+      });
+      expect(res.passed).toBe(false);
+      expect(res.violations).toContain('Copy claims discount but offer has no verified discount evidence');
+    });
+
+    it('should block offer if copy claims historical low without historical price evidence', () => {
+      const res = validateOfferPolicy({
+        price: 99.9,
+        marketplace: 'shopee',
+        affiliateUrl: 'https://aff.shopee.com/123',
+        isHistoricalLow: false,
+        headline: '🔥 Menor preço histórico no Produto X'
+      });
+      expect(res.passed).toBe(false);
+      expect(res.violations).toContain('Copy claims historical low price without verified historical price evidence');
+    });
+
+    it('should block offer if copy claims coupon without couponCode', () => {
+      const res = validateOfferPolicy({
+        price: 99.9,
+        marketplace: 'shopee',
+        affiliateUrl: 'https://aff.shopee.com/123',
+        headline: '🔥 Produto X com Cupom Especial'
+      });
+      expect(res.passed).toBe(false);
+      expect(res.violations).toContain('Copy claims coupon but offer has no verified coupon code');
+    });
+
+    it('should block offer if copy claims free shipping without freeShipping confirmation', () => {
+      const res = validateOfferPolicy({
+        price: 99.9,
+        marketplace: 'shopee',
+        affiliateUrl: 'https://aff.shopee.com/123',
+        freeShipping: false,
+        headline: '🔥 Produto X com Frete Grátis'
+      });
+      expect(res.passed).toBe(false);
+      expect(res.violations).toContain('Copy claims free shipping but offer has no verified free shipping confirmation');
+    });
+
+    it('should pass offer when all claims are backed by evidence and valid affiliate URL', () => {
+      const res = validateOfferPolicy({
+        price: 49.9,
+        oldPrice: 99.9,
+        discountPercent: 50,
+        marketplace: 'shopee',
+        affiliateUrl: 'https://aff.shopee.com/123',
+        freeShipping: true,
+        couponCode: 'DESCONTO10',
+        isHistoricalLow: true,
+        headline: '🔥 OFERTA IMPERDÍVEL: Produto X (50% OFF)',
+        body: 'Por R$ 49.90 com Frete Grátis e Cupom DESCONTO10. Menor preço histórico!'
+      });
+      expect(res.passed).toBe(true);
+      expect(res.violations).toHaveLength(0);
+    });
+  });
 });
+

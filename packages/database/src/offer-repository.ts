@@ -5,9 +5,10 @@ import { calculatePriceHistoryMetrics } from '@vancod/affiliate-core';
 
 export class OfferRepository {
   /**
-   * Upserts a Product and records a ProductPrice snapshot in PostgreSQL.
+   * INGESTION STAGE: Upserts a Product entity ONLY in PostgreSQL.
+   * Does NOT create a ProductPrice snapshot.
    */
-  static async upsertProductAndSnapshot(product: NormalizedProduct, price: number, oldPrice?: number) {
+  static async upsertProductOnly(product: NormalizedProduct) {
     const marketplace = await prisma.marketplace.upsert({
       where: { slug: product.marketplace },
       update: {},
@@ -47,15 +48,28 @@ export class OfferRepository {
       }
     });
 
-    // Record price snapshot
-    const priceSnapshot = await prisma.productPrice.create({
+    return { product: dbProduct, marketplace };
+  }
+
+  /**
+   * PRICE_SNAPSHOT STAGE: Creates a ProductPrice record in PostgreSQL.
+   */
+  static async createPriceSnapshot(productId: string, price: number, oldPrice?: number) {
+    return prisma.productPrice.create({
       data: {
-        productId: dbProduct.id,
+        productId,
         price,
         oldPrice
       }
     });
+  }
 
+  /**
+   * Legacy helper maintained for backward compatibility.
+   */
+  static async upsertProductAndSnapshot(product: NormalizedProduct, price: number, oldPrice?: number) {
+    const { product: dbProduct, marketplace } = await this.upsertProductOnly(product);
+    const priceSnapshot = await this.createPriceSnapshot(dbProduct.id, price, oldPrice);
     return { product: dbProduct, priceSnapshot, marketplace };
   }
 
@@ -92,12 +106,29 @@ export class OfferRepository {
 
   /**
    * Saves an Offer record to PostgreSQL with calculated score and status.
+   * IDEMPOTENT: Prevents creating duplicate offers for the same product and price within 10 minutes.
    */
   static async saveOffer(
     productId: string,
     offer: NormalizedOffer,
     score: ScoreBreakdown
   ): Promise<Offer> {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+    const existingOffer = await prisma.offer.findFirst({
+      where: {
+        productId,
+        price: offer.price,
+        capturedAt: {
+          gte: tenMinutesAgo
+        }
+      }
+    });
+
+    if (existingOffer) {
+      return existingOffer;
+    }
+
     let status: OfferStatus = 'PENDING';
     if (score.action === 'AUTO_PUBLISH') {
       status = 'AUTO_APPROVED';
@@ -124,7 +155,7 @@ export class OfferRepository {
   }
 
   /**
-   * Finds offers requiring manual review (PENDING status or score 70-84).
+   * Finds offers requiring manual review (PENDING status).
    */
   static async findPendingReviewOffers() {
     return prisma.offer.findMany({
@@ -213,7 +244,8 @@ export class OfferRepository {
     headline: string,
     body: string,
     ctaUrl: string,
-    messageId?: number
+    messageId?: number,
+    status: 'PUBLISHED' | 'NOT_CONFIGURED' | 'FAILED' | 'SKIPPED' = 'PUBLISHED'
   ): Promise<TelegramPost> {
     const channel = await prisma.telegramChannel.upsert({
       where: { channelId: channelIdentifier },
@@ -233,7 +265,7 @@ export class OfferRepository {
         headline,
         body,
         ctaUrl,
-        status: 'PUBLISHED'
+        status: status === 'NOT_CONFIGURED' || status === 'FAILED' ? 'FAILED' : 'PUBLISHED'
       }
     });
   }

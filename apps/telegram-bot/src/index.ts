@@ -2,6 +2,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { logger } from '@vancod/logger';
 import { env } from '@vancod/config';
 import { withResilience } from '@vancod/affiliate-core';
+import { prisma } from '@vancod/database';
 
 let isPaused = false;
 
@@ -45,10 +46,10 @@ export class TelegramPublisherService {
     ctaUrl: string;
     imageUrl?: string;
     channelId?: string;
-  }): Promise<{ published: boolean; messageId: number; mock: boolean }> {
+  }): Promise<{ published: boolean; messageId: number; mock: boolean; status: string }> {
     if (isPaused) {
       logger.info('Publishing skipped: Telegram publisher is paused.');
-      return { published: false, messageId: 0, mock: false };
+      return { published: false, messageId: 0, mock: false, status: 'PAUSED' };
     }
 
     const channel = input.channelId || env.TELEGRAM_CHANNEL_ID || env.TELEGRAM_CHANNEL_USERNAME;
@@ -57,12 +58,13 @@ export class TelegramPublisherService {
     if (!this.bot || !channel) {
       logger.warn(
         { headline: input.headline, ctaUrl: input.ctaUrl },
-        'Telegram bot token or channel ID not configured. Running publication in Mock mode.'
+        'Telegram bot token or channel ID not configured. Running publication in NOT_CONFIGURED mode.'
       );
       return {
-        published: true,
+        published: false,
         messageId: 0,
-        mock: true
+        mock: true,
+        status: 'NOT_CONFIGURED'
       };
     }
 
@@ -85,7 +87,7 @@ export class TelegramPublisherService {
       });
 
       logger.info({ messageId: result, channel }, 'Successfully published offer to Telegram channel.');
-      return { published: true, messageId: result, mock: false };
+      return { published: true, messageId: result, mock: false, status: 'PUBLISHED' };
     } catch (err) {
       logger.error({ err, channel }, 'Failed to publish message to Telegram channel.');
       throw err;
@@ -153,113 +155,141 @@ async function startBot() {
     );
   });
 
-  bot.command('ofertas', (ctx) => {
-    ctx.reply(
-      '🛍️ *Últimas Ofertas Qualificadas*\n\n' +
-        '1. 🎧 Fone Bluetooth TWS i12 - R$ 39,90 (Score 92)\n' +
-        '2. 🍿 Mini Projetor Magcubic HY300 - R$ 219,00 (Score 88)\n' +
-        '3. 🔊 Echo Dot 5ª Geração Alexa - R$ 269,10 (Score 86)\n' +
-        '4. 🔥 Air Fryer Mondial 4L Inox - R$ 249,90 (Score 85)',
-      { parse_mode: 'Markdown' }
-    );
-  });
+  bot.command('ofertas', async (ctx) => {
+    try {
+      const offers = await prisma.offer.findMany({
+        take: 5,
+        orderBy: { capturedAt: 'desc' },
+        include: { product: true }
+      });
 
-  bot.command('monitorar', (ctx) => {
-    ctx.reply(
-      '📈 *Métricas & Monitoramento de Filas*\n\n' +
-        '• Jobs Pendentes (BullMQ): 0\n' +
-        '• Filas Ativas: 9/9\n' +
-        '• Latência Média Connectors: 14ms\n' +
-        '• Taxa de Erro: 0.0%',
-      { parse_mode: 'Markdown' }
-    );
-  });
-
-  bot.on('inline_query', async (ctx) => {
-    const query = ctx.inlineQuery.query || 'fone';
-    const results = [
-      {
-        type: 'article' as const,
-        id: '1',
-        title: '🎧 Fone Bluetooth TWS i12 - R$ 39,90 (60% OFF)',
-        description: 'Shopee • Frete Grátis • Cupom R$ 10 OFF',
-        input_message_content: {
-          message_text:
-            '*🔥 OFERTA IMPERDÍVEL: Fone Bluetooth TWS i12*\n\nDe R$ 99,90 por apenas R$ 39,90 na Shopee com Frete Grátis!\n\n🛒 APROVEITAR: https://shopee.com.br/product/123/1001?shopee_affiliate_id=vancod_shopee_aff',
-          parse_mode: 'Markdown' as const
-        }
-      },
-      {
-        type: 'article' as const,
-        id: '2',
-        title: '🍿 Mini Projetor Magcubic HY300 4K - R$ 219,00 (56% OFF)',
-        description: 'AliExpress • Android 11 • Wi-Fi 6',
-        input_message_content: {
-          message_text:
-            '*🍿 Projetor Magcubic HY300 4K no AliExpress*\n\nCom Android 11 integrado por R$ 219,00 (56% OFF) e Frete Grátis!\n\n🛒 APROVEITAR: https://s.click.aliexpress.com/e/_vancod_ali_aff',
-          parse_mode: 'Markdown' as const
-        }
+      if (!offers || offers.length === 0) {
+        ctx.reply('Nenhum dado disponível.');
+        return;
       }
-    ];
 
-    await ctx.answerInlineQuery(results);
+      let text = '🛍️ *Últimas Ofertas Qualificadas*\n\n';
+      offers.forEach((o: any, i: number) => {
+        text += `${i + 1}. ${o.product.title} - R$ ${Number(o.price).toFixed(2)} (Score ${Number(o.score)})\n`;
+      });
+
+      ctx.reply(text, { parse_mode: 'Markdown' });
+    } catch {
+      ctx.reply('Nenhum dado disponível.');
+    }
+  });
+
+  bot.command('monitorar', async (ctx) => {
+    try {
+      const totalProducts = await prisma.product.count();
+      const totalOffers = await prisma.offer.count();
+
+      if (totalProducts === 0 && totalOffers === 0) {
+        ctx.reply('Nenhum dado disponível.');
+        return;
+      }
+
+      ctx.reply(
+        '📈 *Métricas do Sistema*\n\n' +
+          `• Produtos Cadastrados: ${totalProducts}\n` +
+          `• Ofertas Gravadas: ${totalOffers}`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch {
+      ctx.reply('Nenhum dado disponível.');
+    }
   });
 
   bot.command('top', async (ctx) => {
-    ctx.reply(
-      '🔥 *TOP 3 OFERTAS DO DIA (SCORE 90+)*\n\n' +
-        '1️⃣ 🎧 Fone Bluetooth TWS i12 - R$ 39,90 (60% OFF)\n' +
-        '2️⃣ 🍿 Projetor Magcubic HY300 4K - R$ 219,00 (56% OFF)\n' +
-        '3️⃣ 🔊 Echo Dot 5ª Ger. Alexa - R$ 269,10 (37% OFF)\n\n' +
-        '👉 Confira a Vitrine Completa: http://localhost:3001/vitrine',
-      { parse_mode: 'Markdown' }
-    );
+    try {
+      const topOffers = await prisma.offer.findMany({
+        take: 3,
+        orderBy: { score: 'desc' },
+        include: { product: true }
+      });
+
+      if (!topOffers || topOffers.length === 0) {
+        ctx.reply('Nenhum dado disponível.');
+        return;
+      }
+
+      let text = '🔥 *TOP OFERTAS DO DIA*\n\n';
+      topOffers.forEach((o: any, i: number) => {
+        text += `${i + 1}️⃣ ${o.product.title} - R$ ${Number(o.price).toFixed(2)} (Score ${Number(o.score)})\n`;
+      });
+
+      ctx.reply(text, { parse_mode: 'Markdown' });
+    } catch {
+      ctx.reply('Nenhum dado disponível.');
+    }
   });
 
   bot.command('cupons', async (ctx) => {
-    ctx.reply(
-      '🎟️ *CUPONS DE DESCONTO ATIVOS*\n\n' +
-        '🧡 *Shopee*: `SHOPEE50` (R$ 10 OFF acima de R$ 50)\n' +
-        '❤️ *AliExpress*: `ALI15` (R$ 15 OFF acima de R$ 100)\n' +
-        '💙 *Mercado Livre*: `MONDIAL20` (20% OFF em eletro)\n' +
-        '💙 *Magalu*: `MAGALU200` (R$ 200 OFF em Smart TVs)\n\n' +
-        '👉 Use os cupons ao finalizar suas compras!',
-      { parse_mode: 'Markdown' }
-    );
+    try {
+      const couponOffers = await prisma.offer.findMany({
+        where: { couponCode: { not: null } },
+        take: 5,
+        include: { product: true }
+      });
+
+      if (!couponOffers || couponOffers.length === 0) {
+        ctx.reply('Nenhum dado disponível.');
+        return;
+      }
+
+      let text = '🎟️ *CUPONS DE DESCONTO ATIVOS*\n\n';
+      couponOffers.forEach((o: any) => {
+        text += `• *${o.product.title}*: \`${o.couponCode}\`\n`;
+      });
+
+      ctx.reply(text, { parse_mode: 'Markdown' });
+    } catch {
+      ctx.reply('Nenhum dado disponível.');
+    }
   });
 
   bot.command('estatisticas', async (ctx) => {
-    ctx.reply(
-      '📊 *RELATÓRIO DE DESEMPENHO VANCOD*\n\n' +
-        '🌐 *Cliques nos Links*: 1.420 (+18.4% esta semana)\n' +
-        '🛒 *Vendas Estimadas*: 84 conversões\n' +
-        '💰 *Comissão Estimada*: R$ 1.840,50\n' +
-        '🏆 *Marketplace #1*: Shopee (42% do faturamento)\n\n' +
-        '🟢 *Status*: Sistema 100% Operacional',
-      { parse_mode: 'Markdown' }
-    );
-  });
+    try {
+      const totalPosts = await prisma.telegramPost.count({ where: { status: 'PUBLISHED' } });
+      const totalOffers = await prisma.offer.count();
 
-  bot.command('enquete', async (ctx) => {
-    ctx.replyWithPoll(
-      '📊 O que você mais quer ver com CUPOM DE DESCONTO hoje?',
-      [
-        '🎧 Fones de Ouvido & Áudio',
-        '📱 Smartphones & Acessórios',
-        '🍟 Air Fryer & Eletrodomésticos',
-        '🍿 Projetores & Smart TVs'
-      ],
-      { is_anonymous: false }
-    );
+      if (totalPosts === 0 && totalOffers === 0) {
+        ctx.reply('Nenhum dado disponível.');
+        return;
+      }
+
+      ctx.reply(
+        '📊 *RELATÓRIO DE DESEMPENHO*\n\n' +
+          `🛒 *Total Ofertas*: ${totalOffers}\n` +
+          `📢 *Publicações Realizadas*: ${totalPosts}`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch {
+      ctx.reply('Nenhum dado disponível.');
+    }
   });
 
   bot.command('publicar', async (ctx) => {
-    const post = formatTelegramPost(
-      '🔥 Fone Bluetooth TWS i12 (60% OFF)',
-      'De R$ 99,90 por apenas R$ 39,90 na Shopee com Frete Grátis!',
-      'https://shopee.com.br'
-    );
-    await ctx.reply(post.text, { parse_mode: 'Markdown', ...post.keyboard });
+    try {
+      const lastApproved = await prisma.offer.findFirst({
+        where: { status: 'AUTO_APPROVED' },
+        include: { product: true, aiGenerations: true, affiliateLinks: true },
+        orderBy: { capturedAt: 'desc' }
+      });
+
+      if (!lastApproved || !lastApproved.aiGenerations[0]) {
+        ctx.reply('Nenhum dado disponível.');
+        return;
+      }
+
+      const copy = lastApproved.aiGenerations[0];
+      const ctaUrl = lastApproved.affiliateLinks[0]?.affiliateUrl || lastApproved.product.productUrl;
+
+      const post = formatTelegramPost(copy.headline, copy.body, ctaUrl);
+      await ctx.reply(post.text, { parse_mode: 'Markdown', ...post.keyboard });
+    } catch {
+      ctx.reply('Nenhum dado disponível.');
+    }
   });
 
   bot.launch();

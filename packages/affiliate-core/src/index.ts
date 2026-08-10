@@ -232,3 +232,76 @@ export function calculateOfferScore(
 export function generateProductDeduplicationKey(marketplace: string, externalId: string): string {
   return `${marketplace.toLowerCase().trim()}:${externalId.trim()}`;
 }
+
+/**
+ * Deterministic Policy Check before Telegram Publication.
+ * Rejects offers with missing affiliate links, unverified discounts, unproven historical low claims, or unconfirmed coupons/shipping.
+ */
+export function validateOfferPolicy(input: {
+  price: number;
+  marketplace?: string;
+  affiliateUrl?: string;
+  isAffiliateAvailable?: boolean;
+  discountPercent?: number;
+  oldPrice?: number;
+  couponCode?: string;
+  freeShipping?: boolean;
+  isHistoricalLow?: boolean;
+  headline?: string;
+  body?: string;
+}): PolicyCheckResult {
+  const violations: string[] = [];
+
+  // 1. Price validation
+  if (!input.price || input.price <= 0) {
+    violations.push('Price must be greater than zero');
+  }
+
+  // 2. Marketplace validation
+  if (!input.marketplace) {
+    violations.push('Marketplace is required');
+  }
+
+  // 3. Affiliate URL & Capability validation
+  if (!input.affiliateUrl || input.affiliateUrl === 'NOT_AVAILABLE' || input.isAffiliateAvailable === false) {
+    violations.push('Valid affiliate URL is required for automatic publication');
+  }
+
+  const copyText = `${input.headline || ''} ${input.body || ''}`;
+
+  // 4. Discount claim evidence check
+  if (copyText.includes('% OFF') || copyText.toLowerCase().includes('desconto')) {
+    const hasEvidence = (input.discountPercent && input.discountPercent > 0) || (input.oldPrice && input.oldPrice > input.price);
+    if (!hasEvidence) {
+      violations.push('Copy claims discount but offer has no verified discount evidence');
+    }
+  }
+
+  // 5. Historical low claim evidence check
+  if (copyText.toLowerCase().includes('menor preço histórico') || copyText.toLowerCase().includes('menor preco historico')) {
+    if (!input.isHistoricalLow) {
+      violations.push('Copy claims historical low price without verified historical price evidence');
+    }
+  }
+
+  // 6. Coupon claim evidence check
+  if (copyText.toLowerCase().includes('cupom')) {
+    if (!input.couponCode) {
+      violations.push('Copy claims coupon but offer has no verified coupon code');
+    }
+  }
+
+  // 7. Free shipping claim evidence check
+  if (copyText.toLowerCase().includes('frete grátis') || copyText.toLowerCase().includes('frete gratis')) {
+    if (!input.freeShipping) {
+      violations.push('Copy claims free shipping but offer has no verified free shipping confirmation');
+    }
+  }
+
+  return {
+    passed: violations.length === 0,
+    violations,
+    sanitizedUrl: violations.length === 0 ? input.affiliateUrl : undefined
+  };
+}
+

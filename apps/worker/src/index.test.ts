@@ -9,6 +9,7 @@ describe('Worker Queue Configuration', () => {
     expect(QUEUES.SCORING).toBe('offer-scoring');
     expect(QUEUES.AFFILIATE_LINK).toBe('affiliate-link');
     expect(QUEUES.AI_GENERATION).toBe('ai-generation');
+    expect(QUEUES.POLICY_CHECK).toBe('policy-check');
     expect(QUEUES.TELEGRAM_PUBLISH).toBe('telegram-publish');
   });
 });
