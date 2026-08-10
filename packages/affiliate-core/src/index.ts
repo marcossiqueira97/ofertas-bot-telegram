@@ -1,0 +1,234 @@
+import {
+  NormalizedOffer,
+  PriceHistoryMetrics,
+  ScoreBreakdown,
+  PolicyCheckResult
+} from '@vancod/types';
+
+export * from './resilient-fetch';
+export * from './connector-registry';
+
+
+
+const ALLOWED_HOSTNAMES = [
+  'shopee.com.br',
+  'shope.ee',
+  'aliexpress.com',
+  's.click.aliexpress.com',
+  'amazon.com.br',
+  'amzn.to',
+  'mercadolivre.com.br',
+  'mercadolibre.com',
+  'magazineluiza.com.br',
+  'magalu.com'
+];
+
+/**
+ * Validates product URL against SSRF threats and domain allowlist.
+ */
+export function validateProductUrl(urlStr: string): PolicyCheckResult {
+  const violations: string[] = [];
+
+  try {
+    const parsed = new URL(urlStr);
+
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      violations.push('URL protocol must be HTTP or HTTPS');
+    }
+
+    const host = parsed.hostname.toLowerCase();
+
+    const isLoopbackOrPrivate =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '::1' ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('172.16.') ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal');
+
+    if (isLoopbackOrPrivate) {
+      violations.push('URL targets private/loopback network (SSRF protection)');
+    }
+
+    const isAllowedHost = ALLOWED_HOSTNAMES.some(
+      (allowed) => host === allowed || host.endsWith('.' + allowed)
+    );
+
+    if (!isAllowedHost) {
+      violations.push(`Hostname '${host}' is not in the allowed marketplace list`);
+    }
+
+    return {
+      passed: violations.length === 0,
+      violations,
+      sanitizedUrl: violations.length === 0 ? parsed.toString() : undefined
+    };
+  } catch (err) {
+    return {
+      passed: false,
+      violations: ['Invalid URL format']
+    };
+  }
+}
+
+/**
+ * Calculates historical price metrics from price snapshots.
+ */
+export function calculatePriceHistoryMetrics(
+  currentPrice: number,
+  priceSnapshots: { price: number; capturedAt: Date | string }[]
+): PriceHistoryMetrics {
+  if (!priceSnapshots || priceSnapshots.length === 0) {
+    return {
+      isHistoricalLow: true
+    };
+  }
+
+  const now = new Date();
+  const getDaysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+  const d7 = getDaysAgo(7);
+  const d30 = getDaysAgo(30);
+  const d90 = getDaysAgo(90);
+
+  const prices7d = priceSnapshots
+    .filter((s) => new Date(s.capturedAt) >= d7)
+    .map((s) => s.price);
+  const prices30d = priceSnapshots
+    .filter((s) => new Date(s.capturedAt) >= d30)
+    .map((s) => s.price);
+  const prices90d = priceSnapshots
+    .filter((s) => new Date(s.capturedAt) >= d90)
+    .map((s) => s.price);
+
+  const lowestPrice7d = prices7d.length > 0 ? Math.min(...prices7d) : undefined;
+  const lowestPrice30d = prices30d.length > 0 ? Math.min(...prices30d) : undefined;
+  const lowestPrice90d = prices90d.length > 0 ? Math.min(...prices90d) : undefined;
+
+  const averagePrice30d =
+    prices30d.length > 0
+      ? prices30d.reduce((acc, p) => acc + p, 0) / prices30d.length
+      : undefined;
+
+  const currentVsAveragePercent = averagePrice30d
+    ? ((currentPrice - averagePrice30d) / averagePrice30d) * 100
+    : undefined;
+
+  const allHistoricalPrices = priceSnapshots.map((s) => s.price);
+  const globalLowest = Math.min(...allHistoricalPrices);
+  const isHistoricalLow = currentPrice <= globalLowest;
+
+  return {
+    lowestPrice7d,
+    lowestPrice30d,
+    lowestPrice90d,
+    averagePrice30d,
+    currentVsAveragePercent,
+    isHistoricalLow
+  };
+}
+
+/**
+ * Calculates Offer Score (0-100) based on weighted rules defined in specification.
+ */
+export function calculateOfferScore(
+  offer: NormalizedOffer,
+  rating?: number,
+  reviewCount?: number,
+  historyMetrics?: PriceHistoryMetrics
+): ScoreBreakdown {
+  // 1. Real Discount Score (max 30)
+  let realDiscountScore = 0;
+  if (offer.discountPercent && offer.discountPercent > 0) {
+    realDiscountScore = Math.min(30, (offer.discountPercent / 60) * 30);
+  } else if (offer.oldPrice && offer.oldPrice > offer.price) {
+    const discount = ((offer.oldPrice - offer.price) / offer.oldPrice) * 100;
+    realDiscountScore = Math.min(30, (discount / 60) * 30);
+  }
+
+  // 2. History Score (max 20)
+  let historyScore = 10; // Default when no history
+  if (historyMetrics?.isHistoricalLow) {
+    historyScore = 20;
+  } else if (
+    historyMetrics?.currentVsAveragePercent !== undefined &&
+    historyMetrics.currentVsAveragePercent < 0
+  ) {
+    historyScore = Math.min(20, 10 + Math.abs(historyMetrics.currentVsAveragePercent) / 2);
+  }
+
+  // 3. Absolute Price Score (max 15)
+  // Highly accessible products (R$ 10 - R$ 300) score better for impulse buy
+  let absolutePriceScore = 10;
+  if (offer.price <= 50) absolutePriceScore = 15;
+  else if (offer.price <= 200) absolutePriceScore = 13;
+  else if (offer.price <= 500) absolutePriceScore = 10;
+  else if (offer.price <= 1500) absolutePriceScore = 7;
+  else absolutePriceScore = 5;
+
+  // 4. Rating Score (max 10)
+  let ratingScore = 5;
+  if (rating) {
+    ratingScore = Math.min(10, (rating / 5) * 10);
+  }
+
+  // 5. Review Volume Score (max 10)
+  let reviewVolumeScore = 3;
+  if (reviewCount) {
+    if (reviewCount > 1000) reviewVolumeScore = 10;
+    else if (reviewCount > 200) reviewVolumeScore = 7;
+    else if (reviewCount > 50) reviewVolumeScore = 5;
+  }
+
+  // 6. Commission Score (max 5)
+  const commissionScore = 3; // default medium score
+
+  // 7. Popularity Score (max 5)
+  const popularityScore = 3;
+
+  // 8. Shipping Score (max 5)
+  let shippingScore = 2;
+  if (offer.freeShipping) {
+    shippingScore = 5;
+  }
+
+  const totalScore = Math.round(
+    realDiscountScore +
+      historyScore +
+      absolutePriceScore +
+      ratingScore +
+      reviewVolumeScore +
+      commissionScore +
+      popularityScore +
+      shippingScore
+  );
+
+  let action: 'AUTO_PUBLISH' | 'MANUAL_REVIEW' | 'REJECT' = 'REJECT';
+  if (totalScore >= 85) {
+    action = 'AUTO_PUBLISH';
+  } else if (totalScore >= 70) {
+    action = 'MANUAL_REVIEW';
+  }
+
+  return {
+    realDiscountScore: Math.round(realDiscountScore),
+    historyScore: Math.round(historyScore),
+    absolutePriceScore: Math.round(absolutePriceScore),
+    ratingScore: Math.round(ratingScore),
+    reviewVolumeScore: Math.round(reviewVolumeScore),
+    commissionScore,
+    popularityScore,
+    shippingScore,
+    totalScore,
+    action
+  };
+}
+
+/**
+ * Generates a unique deduplication key for products.
+ */
+export function generateProductDeduplicationKey(marketplace: string, externalId: string): string {
+  return `${marketplace.toLowerCase().trim()}:${externalId.trim()}`;
+}

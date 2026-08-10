@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+}
+
+enum OfferStatus {
+  PENDING
+  AUTO_APPROVED
+  MANUALLY_APPROVED
+  REJECTED
+  PUBLISHED
+}
+
+enum PostStatus {
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Marketplace {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  enabled   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products         Product[]
+  affiliateAccounts AffiliateAccount[]
+}
+
+model AffiliateAccount {
+  id            String      @id @default(uuid())
+  marketplaceId String
+  marketplace   Marketplace @relation(fields: [marketplaceId], references: [id])
+  accountName   String
+  trackingId    String?
+  appKey        String?
+  appSecret     String?
+  enabled       Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+  parentId  String?
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id                String   @id @default(uuid())
+  marketplaceId     String
+  marketplace       Marketplace @relation(fields: [marketplaceId], references: [id])
+  externalId        String
+  title             String
+  brand             String?
+  categoryId        String?
+  category          Category? @relation(fields: [categoryId], references: [id])
+  description       String?
+  imageUrl          String?
+  productUrl        String
+  rating            Float?
+  reviewCount       Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  prices        ProductPrice[]
+  offers        Offer[]
+
+  @@unique([marketplaceId, externalId])
+}
+
+model ProductPrice {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price     Float
+  oldPrice  Float?
+  currency  String   @default("BRL")
+  capturedAt DateTime @default(now())
+}
+
+model Offer {
+  id              String      @id @default(uuid())
+  productId       String
+  product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price           Float
+  oldPrice        Float?
+  discountPercent Float?
+  currency        String      @default("BRL")
+  availability    String?
+  seller          String?
+  couponCode      String?
+  couponDiscount  String?
+  freeShipping    Boolean     @default(false)
+  score           Float       @default(0)
+  status          OfferStatus @default(PENDING)
+  rejectionReason String?
+  capturedAt      DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  affiliateLinks AffiliateLink[]
+  aiGenerations  AiGeneration[]
+  telegramPosts  TelegramPost[]
+  scheduledPosts ScheduledPost[]
+  priceAlerts    PriceAlert[]
+}
+
+model AffiliateLink {
+  id           String   @id @default(uuid())
+  offerId      String
+  offer        Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  originalUrl  String
+  affiliateUrl String
+  subId        String?
+  createdAt    DateTime @default(now())
+
+  clicks Click[]
+}
+
+model TelegramChannel {
+  id        String   @id @default(uuid())
+  channelId String   @unique
+  username  String?
+  title     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts          TelegramPost[]
+  scheduledPosts ScheduledPost[]
+}
+
+model TelegramPost {
+  id        String     @id @default(uuid())
+  offerId   String
+  offer     Offer      @relation(fields: [offerId], references: [id])
+  channelId String
+  channel   TelegramChannel @relation(fields: [channelId], references: [id])
+  messageId Int?
+  headline  String
+  body      String
+  ctaUrl    String
+  status    PostStatus @default(PUBLISHED)
+  publishedAt DateTime @default(now())
+}
+
+model ScheduledPost {
+  id          String          @id @default(uuid())
+  offerId     String
+  offer       Offer           @relation(fields: [offerId], references: [id])
+  channelId   String
+  channel     TelegramChannel @relation(fields: [channelId], references: [id])
+  scheduledAt DateTime
+  status      PostStatus      @default(SCHEDULED)
+  createdAt   DateTime        @default(now())
+}
+
+model AiGeneration {
+  id         String   @id @default(uuid())
+  offerId    String
+  offer      Offer    @relation(fields: [offerId], references: [id])
+  provider   String
+  promptUsed String
+  headline   String
+  body       String
+  cta        String
+  riskFlags  String[]
+  createdAt  DateTime @default(now())
+}
+
+model Click {
+  id              String        @id @default(uuid())
+  affiliateLinkId String
+  affiliateLink   AffiliateLink @relation(fields: [affiliateLinkId], references: [id])
+  ipAddress       String?
+  userAgent       String?
+  referer         String?
+  createdAt       DateTime      @default(now())
+}
+
+model PriceAlert {
+  id          String   @id @default(uuid())
+  offerId     String
+  offer       Offer    @relation(fields: [offerId], references: [id])
+  targetPrice Float
+  triggered   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model SystemLog {
+  id        String   @id @default(uuid())
+  level     String
+  component String
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+}

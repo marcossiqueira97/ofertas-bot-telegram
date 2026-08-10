@@ -1,0 +1,23 @@
+{
+  "name": "@vancod/telegram-bot",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs --dts",
+    "dev": "tsup src/index.ts --format cjs --watch --onSuccess \"node dist/index.js\"",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vancod/affiliate-core": "workspace:*",
+    "@vancod/config": "workspace:*",
+    "@vancod/logger": "workspace:*",
+    "@vancod/types": "workspace:*",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.0"
+  }
+}
