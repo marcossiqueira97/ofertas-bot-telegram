@@ -29,6 +29,25 @@ export interface NormalizedOffer {
   freeShipping?: boolean;
 }
 
+export type IntegrationStatus =
+  | 'MOCK'
+  | 'CONFIGURED'
+  | 'AUTHENTICATED'
+  | 'ACTIVE'
+  | 'ERROR'
+  | 'DISABLED';
+
+export interface MarketplaceIntegrationDetail {
+  marketplace: MarketplaceName;
+  connector: 'ok' | 'warning' | 'error';
+  credentials: 'ok' | 'warning' | 'error';
+  api: 'ok' | 'warning' | 'error';
+  affiliate: 'ok' | 'warning' | 'error';
+  publishing: 'ok' | 'warning' | 'error';
+  status: IntegrationStatus;
+  statusLabel: string;
+}
+
 export interface ConnectorHealth {
   status: 'ok' | 'degraded' | 'error';
   marketplace: MarketplaceName;

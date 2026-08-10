@@ -1269,6 +1269,73 @@ export default function DashboardPage() {
             <h2 className="section-title">Configurações Gerais & Automação de Publicação</h2>
           </div>
 
+          {/* 5-Dimension Integration Matrix */}
+          <div style={{ marginBottom: '2rem', background: 'var(--bg-card)', padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+            <h3 style={{ fontSize: '1rem', color: '#60a5fa', marginBottom: '0.75rem' }}>
+              📊 Matriz de Integração dos Marketplaces (Status 5-Dimensões)
+            </h3>
+            <table className="table" style={{ fontSize: '0.85rem' }}>
+              <thead>
+                <tr>
+                  <th>Marketplace</th>
+                  <th>Connector</th>
+                  <th>Credenciais</th>
+                  <th>API Feed</th>
+                  <th>Affiliate Link</th>
+                  <th>Publicação</th>
+                  <th>Status Geral</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ fontWeight: 700 }}>🧡 Shopee</td>
+                  <td>🟢 OK</td>
+                  <td>🟢 OK</td>
+                  <td>🟢 Mock</td>
+                  <td>🟢 Mock</td>
+                  <td>🟢 OK</td>
+                  <td><span className="badge badge-ok">MOCK SIMULADO</span></td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 700 }}>❤️ AliExpress</td>
+                  <td>🟢 OK</td>
+                  <td>🟢 OK</td>
+                  <td>🟢 Mock</td>
+                  <td>🟢 Mock</td>
+                  <td>🟢 OK</td>
+                  <td><span className="badge badge-ok">MOCK SIMULADO</span></td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 700 }}>💙 Mercado Livre</td>
+                  <td>🟢 OK</td>
+                  <td>🟢 OK</td>
+                  <td>🟢 Live HTTP API</td>
+                  <td>🟢 OK</td>
+                  <td>🟢 OK</td>
+                  <td><span className="badge badge-ok" style={{ background: '#10b981' }}>LIVE API OPERACIONAL</span></td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 700 }}>💛 Amazon</td>
+                  <td>🟢 OK</td>
+                  <td>🔴 Pendente</td>
+                  <td>🟡 Simulado</td>
+                  <td>🟡 Simulado</td>
+                  <td>🟡 Pendente</td>
+                  <td><span className="badge badge-mock" style={{ background: '#f59e0b', color: '#111' }}>AGUARDANDO CREDENCIAIS</span></td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 700 }}>💙 Magalu</td>
+                  <td>🟢 OK</td>
+                  <td>🔴 Pendente</td>
+                  <td>🟡 Simulado</td>
+                  <td>🟡 Simulado</td>
+                  <td>🟡 Pendente</td>
+                  <td><span className="badge badge-mock" style={{ background: '#f59e0b', color: '#111' }}>AGUARDANDO LOJA PARCEIRA</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <form onSubmit={handleSaveSettings}>
             <h3 style={{ fontSize: '1rem', color: '#60a5fa', marginBottom: '1rem' }}>
               🤖 Automação de Publicação Periódica (Telegram Auto-Post)

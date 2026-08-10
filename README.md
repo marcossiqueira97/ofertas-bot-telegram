@@ -4,16 +4,34 @@ Plataforma completa e modular para automação, qualificação por IA e publica�
 
 ---
 
+## 🚦 Estado Atual do Projeto
+
+- 🟢 **Arquitetura Monorepo & Modularidade**: pnpm + Turborepo + TypeScript
+- 🟢 **Docker & Orquestração**: PostgreSQL + Redis + API + Web + Worker + Telegram Bot
+- 🟢 **PostgreSQL & Prisma ORM**: Schema tipado com repositórios e migrations
+- 🟢 **Redis & BullMQ**: Filas assíncronas para ingestão, scoring, IA e publicação
+- 🟢 **Connector Interfaces**: Interfaces padronizadas em `@vancod/types`
+- 🟢 **Offer Engine & Score (0-100)**: Algoritmo fatorial (desconto, histórico 90d, frete, avaliações)
+- 🟢 **Testes Automatizados**: Suíte completa de testes unitários passing em vitest
+- 🟡 **Telegram Bot**: Bot funcional em modo simulado e integração com API real do Telegram
+- 🟡 **Mercado Livre**: Busca pública real via HTTP API (`api.mercadolibre.com`) e suporte a simulador
+- 🟡 **Shopee**: Conector estruturado com suporte a Mock e preparado para credenciais oficiais
+- 🟡 **AliExpress**: Conector estruturado com suporte a Mock e preparado para credenciais oficiais
+- 🔴 **Amazon**: Conector estruturado (Aguardando credenciais PA-API oficiais)
+- 🔴 **Magalu**: Conector estruturado (Aguardando acesso de loja parceira Magazine Você)
+
+---
+
 ## 🎯 Visão Geral
 
 - **Coleta & Normalização**: Conectores isolados para cada marketplace com fallback em modo Mock e interfaces tipadas para produção.
-- **Offer Engine & Historico**: Snapshot de preços, cálculo de métricas de 90 dias (menor preço em 7d, 30d, 90d, média de 30d, menor histórico) e cálculo de score ponderado (0 a 100).
+- **Offer Engine & Histórico**: Snapshot de preços, cálculo de métricas de 90 dias (menor preço em 7d, 30d, 90d, média de 30d, menor histórico) e cálculo de score ponderado (0 a 100).
 - **Proteção SSRF**: Validador de domínio e URLs permitidas (`validateProductUrl`).
 - **Resiliência Externa**: Wrapper `withResilience` com timeout configurável, retries com backoff exponencial, jitter e tratamento de Rate Limit.
 - **Geração de Copy por IA**: IA factual que utiliza exclusivamente dados verificados da oferta (sem alucinação).
 - **Links de Afiliados**: Parametrizados por variáveis de ambiente (`SHOPEE_AFFILIATE_ID`, `ALIEXPRESS_TRACKING_ID`, `AMAZON_ASSOCIATE_TAG`, `MERCADOLIVRE_AFFILIATE_TAG`, `MAGALU_STORE_NAME`).
 - **Telegram Bot & Publisher**: Postagem formatada em Markdown com foto, preço com desconto e botão CTA direto para a oferta de afiliado.
-- **Painel Dashboard Next.js**: 4 abas interativas (*Visão Geral*, *Aprovação Manual*, *Alertas de Preço*, *Agendamento de Posts*).
+- **Painel Dashboard Next.js**: Aba interativa de ofertas, aprovação manual, alertas de preço, agendamento de posts, vitrine pública (`/vitrine`) e controle de status de integração 3D.
 
 ---
 
@@ -53,7 +71,7 @@ pnpm install
 # Gerar Prisma Client e popular banco
 pnpm --filter @vancod/database prisma generate
 
-# Executar suíte de testes unitários (20 tarefas passing)
+# Executar suíte de testes unitários
 pnpm test
 
 # Executar compilação completa do projeto
