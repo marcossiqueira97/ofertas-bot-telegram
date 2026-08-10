@@ -10,18 +10,21 @@ export class MockAiProvider implements AiProvider {
 
   async generateCopy(input: AiCopyInput): Promise<AiCopyOutput> {
     const discountText = input.discountPercent ? ` (${input.discountPercent}% OFF)` : '';
-    const oldPriceText = input.oldPrice ? ` de R$ ${input.oldPrice.toFixed(2)} por` : '';
+    const priceText = input.oldPrice
+      ? `De ~R$ ${input.oldPrice.toFixed(2)}~ por *R$ ${input.price.toFixed(2)}*`
+      : `Por *R$ ${input.price.toFixed(2)}*`;
+    
     const couponText = input.coupon ? `\n🎟️ Cupom: ${input.coupon}` : '';
     const shippingText = input.shipping ? `\n🚚 Frete: ${input.shipping}` : '';
     const ratingText = input.rating ? `\n⭐ Avaliação: ${input.rating}/5.0` : '';
 
     const headline = `🔥 OFERTA IMPERDÍVEL: ${input.title}${discountText}`;
-    const body = `De R$ ${input.price.toFixed(2)}${oldPriceText} no ${input.marketplace.toUpperCase()}.${ratingText}${shippingText}${couponText}`;
+    const body = `${priceText} no ${input.marketplace}.${ratingText}${shippingText}${couponText}`;
 
     return {
       headline,
       body,
-      cta: '🛒 Ver oferta no ' + input.marketplace,
+      cta: `🛒 Ver oferta no ${input.marketplace}`,
       riskFlags: []
     };
   }

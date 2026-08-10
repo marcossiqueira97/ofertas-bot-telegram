@@ -168,18 +168,19 @@ export function calculateOfferScore(
   else if (offer.price <= 1500) absolutePriceScore = 7;
   else absolutePriceScore = 5;
 
-  // 4. Rating Score (max 10)
-  let ratingScore = 5;
+  // 4. Rating Score (max 10) - Se não houver rating verificado, 0 pontos
+  let ratingScore = 0;
   if (rating) {
     ratingScore = Math.min(10, (rating / 5) * 10);
   }
 
-  // 5. Review Volume Score (max 10)
-  let reviewVolumeScore = 3;
+  // 5. Review Volume Score (max 10) - Se não houver volume de reviews verificado, 0 pontos
+  let reviewVolumeScore = 0;
   if (reviewCount) {
     if (reviewCount > 1000) reviewVolumeScore = 10;
     else if (reviewCount > 200) reviewVolumeScore = 7;
     else if (reviewCount > 50) reviewVolumeScore = 5;
+    else reviewVolumeScore = 2;
   }
 
   // 6. Commission Score (max 5)
