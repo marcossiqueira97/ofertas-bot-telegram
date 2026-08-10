@@ -98,13 +98,14 @@ model Product {
 }
 
 model ProductPrice {
-  id        String   @id @default(uuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  price     Decimal  @db.Decimal(10, 2)
-  oldPrice  Decimal? @db.Decimal(10, 2)
-  currency  String   @default("BRL")
-  capturedAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price         Decimal  @db.Decimal(10, 2)
+  oldPrice      Decimal? @db.Decimal(10, 2)
+  currency      String   @default("BRL")
+  sourceEventId String?
+  capturedAt    DateTime @default(now())
 }
 
 model Offer {
@@ -123,6 +124,7 @@ model Offer {
   score           Decimal     @default(0) @db.Decimal(5, 2)
   status          OfferStatus @default(PENDING)
   rejectionReason String?
+  sourceEventId   String?
   capturedAt      DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 

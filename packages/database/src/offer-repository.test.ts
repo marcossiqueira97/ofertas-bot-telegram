@@ -14,14 +14,16 @@ vi.mock('./index', () => {
       },
       productPrice: {
         create: vi.fn(),
-        findMany: vi.fn()
+        findMany: vi.fn(),
+        findFirst: vi.fn()
       },
       offer: {
         create: vi.fn(),
         findFirst: vi.fn()
       },
       affiliateLink: {
-        create: vi.fn()
+        create: vi.fn(),
+        findFirst: vi.fn()
       },
       aiGeneration: {
         create: vi.fn()
@@ -30,7 +32,8 @@ vi.mock('./index', () => {
         upsert: vi.fn()
       },
       telegramPost: {
-        create: vi.fn()
+        create: vi.fn(),
+        findFirst: vi.fn()
       }
     }
   };
@@ -73,6 +76,7 @@ describe('OfferRepository', () => {
       price: new Prisma.Decimal(39.9),
       oldPrice: new Prisma.Decimal(99.9),
       currency: 'BRL',
+      sourceEventId: null,
       capturedAt: new Date()
     });
 
@@ -93,30 +97,55 @@ describe('OfferRepository', () => {
     expect(prisma.productPrice.create).toHaveBeenCalledTimes(1);
   });
 
-  it('should save offer with AUTO_APPROVED status for score >= 85', async () => {
-    vi.mocked(prisma.offer.create).mockResolvedValue({
-      id: 'offer-1',
+  it('should prevent duplicate ProductPrice for the same sourceEventId', async () => {
+    const existingSnapshot = {
+      id: 'price-100',
       productId: 'prod-1',
-      price: new Prisma.Decimal(39.9),
-      oldPrice: new Prisma.Decimal(99.9),
-      discountPercent: new Prisma.Decimal(60),
+      price: new Prisma.Decimal(50.0),
+      oldPrice: null,
+      currency: 'BRL',
+      sourceEventId: 'event-123',
+      capturedAt: new Date()
+    };
+
+    vi.mocked(prisma.productPrice.findFirst).mockResolvedValue(existingSnapshot);
+
+    const snapshot = await OfferRepository.createPriceSnapshot('prod-1', 50.0, undefined, 'event-123');
+
+    expect(snapshot.id).toBe('price-100');
+    expect(prisma.productPrice.findFirst).toHaveBeenCalledWith({
+      where: { productId: 'prod-1', sourceEventId: 'event-123' }
+    });
+    expect(prisma.productPrice.create).not.toHaveBeenCalled();
+  });
+
+  it('should prevent duplicate Offer for the same sourceEventId', async () => {
+    const existingOffer = {
+      id: 'offer-100',
+      productId: 'prod-1',
+      price: new Prisma.Decimal(50.0),
+      oldPrice: null,
+      discountPercent: null,
       currency: 'BRL',
       availability: 'IN_STOCK',
-      seller: 'Loja',
+      seller: null,
       couponCode: null,
       couponDiscount: null,
       freeShipping: true,
-      score: new Prisma.Decimal(88),
-      status: 'AUTO_APPROVED',
+      score: new Prisma.Decimal(90),
+      status: 'AUTO_APPROVED' as const,
       rejectionReason: null,
+      sourceEventId: 'event-123',
       capturedAt: new Date(),
       updatedAt: new Date()
-    });
+    };
+
+    vi.mocked(prisma.offer.findFirst).mockResolvedValue(existingOffer);
 
     const offerData = {
       marketplace: 'shopee' as const,
       externalProductId: 'shp-1001',
-      price: 39.9,
+      price: 50.0,
       currency: 'BRL',
       capturedAt: new Date().toISOString()
     };
@@ -129,21 +158,39 @@ describe('OfferRepository', () => {
       reviewVolumeScore: 8,
       commissionScore: 3,
       popularityScore: 2,
-      shippingScore: 0,
-      totalScore: 88,
+      shippingScore: 2,
+      totalScore: 90,
       action: 'AUTO_PUBLISH' as const
     };
 
-    const created = await OfferRepository.saveOffer('prod-1', offerData, scoreData);
+    const offer = await OfferRepository.saveOffer('prod-1', offerData, scoreData, 'event-123');
 
-    expect(created.status).toBe('AUTO_APPROVED');
-    expect(prisma.offer.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: 'AUTO_APPROVED',
-          score: 88
-        })
-      })
+    expect(offer.id).toBe('offer-100');
+    expect(prisma.offer.findFirst).toHaveBeenCalledWith({
+      where: { productId: 'prod-1', sourceEventId: 'event-123' }
+    });
+    expect(prisma.offer.create).not.toHaveBeenCalled();
+  });
+
+  it('should prevent duplicate AffiliateLink for the same offerId and affiliateUrl', async () => {
+    const existingLink = {
+      id: 'aff-100',
+      offerId: 'offer-1',
+      originalUrl: 'https://shopee.com.br/product/1',
+      affiliateUrl: 'https://shopee.com.br/product/1?aff=123',
+      subId: null,
+      createdAt: new Date()
+    };
+
+    vi.mocked(prisma.affiliateLink.findFirst).mockResolvedValue(existingLink);
+
+    const link = await OfferRepository.saveAffiliateLink(
+      'offer-1',
+      'https://shopee.com.br/product/1',
+      'https://shopee.com.br/product/1?aff=123'
     );
+
+    expect(link.id).toBe('aff-100');
+    expect(prisma.affiliateLink.create).not.toHaveBeenCalled();
   });
 });

@@ -69,7 +69,8 @@ async function startWorkers() {
     QUEUES.INGESTION,
     async (job: Job) => {
       const startTime = Date.now();
-      const { product, price, oldPrice } = job.data as { product: NormalizedProduct; price: number; oldPrice?: number };
+      const { product, price, oldPrice, sourceEventId } = job.data as { product: NormalizedProduct; price: number; oldPrice?: number; sourceEventId?: string };
+      const eventId = sourceEventId || job.data.eventId || job.id;
 
       try {
         const { product: dbProduct } = await OfferRepository.upsertProductOnly(product);
@@ -78,7 +79,8 @@ async function startWorkers() {
           productId: dbProduct.id,
           product,
           price,
-          oldPrice
+          oldPrice,
+          sourceEventId: eventId
         });
 
         const durationMs = Date.now() - startTime;
@@ -101,7 +103,7 @@ async function startWorkers() {
     QUEUES.NORMALIZATION,
     async (job: Job) => {
       const startTime = Date.now();
-      const { productId, product, price, oldPrice } = job.data;
+      const { productId, product, price, oldPrice, sourceEventId } = job.data;
 
       try {
         const policyCheck = validateProductUrl(product.productUrl);
@@ -113,7 +115,8 @@ async function startWorkers() {
           productId,
           product,
           price,
-          oldPrice
+          oldPrice,
+          sourceEventId
         });
 
         const durationMs = Date.now() - startTime;
@@ -136,18 +139,19 @@ async function startWorkers() {
     QUEUES.PRICE_SNAPSHOT,
     async (job: Job) => {
       const startTime = Date.now();
-      const { productId, product, price, oldPrice } = job.data;
+      const { productId, product, price, oldPrice, sourceEventId } = job.data;
 
       try {
         const historyMetrics = await OfferRepository.getHistoricalMetricsForProduct(productId, price);
-        await OfferRepository.createPriceSnapshot(productId, price, oldPrice);
+        await OfferRepository.createPriceSnapshot(productId, price, oldPrice, sourceEventId);
 
         await queues.scoring.add('score', {
           productId,
           product,
           price,
           oldPrice,
-          historyMetrics
+          historyMetrics,
+          sourceEventId
         });
 
         const durationMs = Date.now() - startTime;
@@ -170,7 +174,7 @@ async function startWorkers() {
     QUEUES.SCORING,
     async (job: Job) => {
       const startTime = Date.now();
-      const { productId, product, price, oldPrice, historyMetrics } = job.data;
+      const { productId, product, price, oldPrice, historyMetrics, sourceEventId } = job.data;
 
       try {
         const normalizedOffer: NormalizedOffer = {
@@ -184,7 +188,7 @@ async function startWorkers() {
         };
 
         const score = calculateOfferScore(normalizedOffer, product.rating, product.reviewCount, historyMetrics);
-        const dbOffer = await OfferRepository.saveOffer(productId, normalizedOffer, score);
+        const dbOffer = await OfferRepository.saveOffer(productId, normalizedOffer, score, sourceEventId);
 
         const durationMs = Date.now() - startTime;
         logger.info(
@@ -378,13 +382,13 @@ async function startWorkers() {
       const { offerId, headline, body, ctaUrl, imageUrl, channelId } = job.data;
 
       try {
-        // Idempotency check: prevent duplicate Telegram posts for same offer
+        // Idempotency check: prevent duplicate Telegram posts ONLY if already PUBLISHED
         const existingPost = await prisma.telegramPost.findFirst({
-          where: { offerId }
+          where: { offerId, status: 'PUBLISHED' }
         });
 
         if (existingPost) {
-          logger.info({ jobId: job.id, stage: 'TELEGRAM_PUBLISH', offerId, existingPostId: existingPost.id }, 'Offer already published to Telegram. Skipping duplicate.');
+          logger.info({ jobId: job.id, stage: 'TELEGRAM_PUBLISH', offerId, existingPostId: existingPost.id }, 'Offer already published to Telegram with status PUBLISHED. Skipping duplicate.');
           return { offerId, published: true, messageId: existingPost.messageId, duplicate: true };
         }
 

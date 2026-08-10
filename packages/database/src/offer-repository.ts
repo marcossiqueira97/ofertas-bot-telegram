@@ -53,13 +53,24 @@ export class OfferRepository {
 
   /**
    * PRICE_SNAPSHOT STAGE: Creates a ProductPrice record in PostgreSQL.
+   * IDEMPOTENT: Prevents duplicate snapshots for the same event ID.
    */
-  static async createPriceSnapshot(productId: string, price: number, oldPrice?: number) {
+  static async createPriceSnapshot(productId: string, price: number, oldPrice?: number, sourceEventId?: string) {
+    if (sourceEventId) {
+      const existing = await prisma.productPrice.findFirst({
+        where: { productId, sourceEventId }
+      });
+      if (existing) {
+        return existing;
+      }
+    }
+
     return prisma.productPrice.create({
       data: {
         productId,
         price,
-        oldPrice
+        oldPrice,
+        sourceEventId
       }
     });
   }
@@ -67,9 +78,9 @@ export class OfferRepository {
   /**
    * Legacy helper maintained for backward compatibility.
    */
-  static async upsertProductAndSnapshot(product: NormalizedProduct, price: number, oldPrice?: number) {
+  static async upsertProductAndSnapshot(product: NormalizedProduct, price: number, oldPrice?: number, sourceEventId?: string) {
     const { product: dbProduct, marketplace } = await this.upsertProductOnly(product);
-    const priceSnapshot = await this.createPriceSnapshot(dbProduct.id, price, oldPrice);
+    const priceSnapshot = await this.createPriceSnapshot(dbProduct.id, price, oldPrice, sourceEventId);
     return { product: dbProduct, priceSnapshot, marketplace };
   }
 
@@ -106,27 +117,25 @@ export class OfferRepository {
 
   /**
    * Saves an Offer record to PostgreSQL with calculated score and status.
-   * IDEMPOTENT: Prevents creating duplicate offers for the same product and price within 10 minutes.
+   * IDEMPOTENT: Prevents creating duplicate offers for the same event ID.
    */
   static async saveOffer(
     productId: string,
     offer: NormalizedOffer,
-    score: ScoreBreakdown
+    score: ScoreBreakdown,
+    sourceEventId?: string
   ): Promise<Offer> {
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-
-    const existingOffer = await prisma.offer.findFirst({
-      where: {
-        productId,
-        price: offer.price,
-        capturedAt: {
-          gte: tenMinutesAgo
+    if (sourceEventId) {
+      const existingOffer = await prisma.offer.findFirst({
+        where: {
+          productId,
+          sourceEventId
         }
-      }
-    });
+      });
 
-    if (existingOffer) {
-      return existingOffer;
+      if (existingOffer) {
+        return existingOffer;
+      }
     }
 
     let status: OfferStatus = 'PENDING';
@@ -149,7 +158,8 @@ export class OfferRepository {
         couponDiscount: offer.couponDiscount,
         freeShipping: offer.freeShipping || false,
         score: score.totalScore,
-        status
+        status,
+        sourceEventId
       }
     });
   }
@@ -196,6 +206,7 @@ export class OfferRepository {
 
   /**
    * Persists generated affiliate link in DB.
+   * IDEMPOTENT: Prevents duplicate links for the same offer and affiliateUrl.
    */
   static async saveAffiliateLink(
     offerId: string,
@@ -203,6 +214,17 @@ export class OfferRepository {
     affiliateUrl: string,
     subId?: string
   ): Promise<AffiliateLink> {
+    const existing = await prisma.affiliateLink.findFirst({
+      where: {
+        offerId,
+        affiliateUrl
+      }
+    });
+
+    if (existing) {
+      return existing;
+    }
+
     return prisma.affiliateLink.create({
       data: {
         offerId,
