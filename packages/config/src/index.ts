@@ -31,7 +31,7 @@ const envSchema = z.object({
 
   MERCADOLIVRE_ENABLED: z.coerce.boolean().default(false),
   MERCADOLIVRE_ACCESS_TOKEN: z.string().optional().default(''),
-  MERCADOLIVRE_AFFILIATE_TAG: z.string().optional().default('vancod_ml_aff'),
+  MERCADOLIVRE_AFFILIATE_TAG: z.string().optional().default(''),
 
   MAGALU_ENABLED: z.coerce.boolean().default(false),
   MAGALU_STORE_NAME: z.string().optional().default('magazinevancod'),

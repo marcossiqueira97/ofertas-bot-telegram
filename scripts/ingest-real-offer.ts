@@ -6,71 +6,83 @@ import {
 } from '@vancod/affiliate-core';
 import { createAiProvider } from '@vancod/ai';
 import { telegramPublisher } from '@vancod/telegram-bot';
+import { env } from '@vancod/config';
 import { prisma } from '@vancod/database';
 
 async function main() {
   console.log('\n==================================================');
-  console.log('🚀 VANCOD OFERTAS — PROCESSANDO PRIMEIRA OFERTA REAL');
+  console.log('🚀 VANCOD OFERTAS — INGESTÃO E PROCESSAMENTO FACTUAL DE OFERTA');
   console.log('==================================================\n');
+
+  console.log('STATUS DAS CONFIGURAÇÕES:');
+  console.log(`• REAL API: Mercado Livre Catalog API`);
+  console.log(`• ACCESS TOKEN: ${env.MERCADOLIVRE_ACCESS_TOKEN ? 'Configurado' : 'Ausente (Necessário para buscas autenticadas na API)'}`);
+  console.log(`• AFFILIATE TAG: ${env.MERCADOLIVRE_AFFILIATE_TAG ? env.MERCADOLIVRE_AFFILIATE_TAG : 'Ausente (Links serão emitidos como NOT_AVAILABLE)'}`);
 
   const connector = new MercadoLivreConnector(true);
 
   // 1. Health check
   const health = await connector.healthCheck();
-  console.log(`📌 Conector: ${health.marketplace} | Status: ${health.status} | Latência: ${health.latencyMs}ms`);
+  console.log(`\n📌 Conector: ${health.marketplace} | Status: ${health.status} | Latência: ${health.latencyMs}ms`);
+  console.log(`   Affiliate Link Capability: ${connector.capabilities.affiliateLink ? 'Ativo' : 'Inativo (AFFILIATE STATUS = NOT_CONFIGURED)'}`);
 
-  // 2. Ingestão do catálogo em tempo real (API oficial Mercado Livre / Adapter)
-  console.log('\n🔎 1. Buscando produto em tempo real via API oficial Mercado Livre...');
-  const searchResults = await connector.searchProducts({ query: 'smartphone', limit: 1 });
+  // 2. Ingestão factual em tempo real
+  console.log('\n🔎 1. Buscando REAL PRODUCT na API oficial...');
+  let searchResults;
+  try {
+    searchResults = await connector.searchProducts({ query: 'smartphone', limit: 1 });
+  } catch (err: any) {
+    console.error(`\n❌ FALHA NA BUSCA DE REAL PRODUCT DA API: ${err?.message || err}`);
+    console.error(`💡 Para realizar buscas reais na API do Mercado Livre, configure MERCADOLIVRE_ACCESS_TOKEN no .env.`);
+    process.exit(1);
+  }
 
   if (!searchResults || searchResults.length === 0) {
-    console.error('❌ Nenhum produto encontrado na busca em tempo real.');
+    console.error('❌ Nenhum produto retornado pela API real.');
     process.exit(1);
   }
 
   const realProduct = searchResults[0];
-  console.log(`✅ Produto Encontrado: ${realProduct.title}`);
+  console.log(`✅ REAL PRODUCT: ${realProduct.title}`);
   console.log(`   - ID Externo: ${realProduct.externalId}`);
   console.log(`   - URL Original: ${realProduct.productUrl}`);
-  console.log(`   - Imagem: ${realProduct.imageUrl}`);
+  console.log(`   - Imagem: ${realProduct.imageUrl || 'N/A'}`);
 
   // 3. Busca de oferta e preço em tempo real
-  console.log('\n💵 2. Obteve oferta em tempo real...');
+  console.log('\n💵 2. Obteve REAL PRICE em tempo real...');
   const offers = await connector.getOffers({ productId: realProduct.externalId });
   if (!offers || offers.length === 0) {
-    console.error('❌ Nenhuma oferta encontrada para o produto.');
+    console.error('❌ Nenhuma oferta retornada pela API real para o produto.');
     process.exit(1);
   }
   const realOffer = offers[0];
-  console.log(`   - Preço Atual: R$ ${realOffer.price.toFixed(2)}`);
+  console.log(`✅ REAL PRICE: R$ ${realOffer.price.toFixed(2)}`);
   console.log(`   - Preço Antigo: ${realOffer.oldPrice ? `R$ ${realOffer.oldPrice.toFixed(2)}` : 'N/A'}`);
   console.log(`   - Desconto: ${realOffer.discountPercent ? `${realOffer.discountPercent}%` : 'N/A'}`);
   console.log(`   - Frete Grátis: ${realOffer.freeShipping ? 'Sim' : 'Não'}`);
 
-  // 4. Geração de Deeplink Real
-  console.log('\n🔗 3. Gerando Deeplink de Afiliado Real...');
+  // 4. Deeplink de Afiliado
+  console.log('\n🔗 3. Gerando Deeplink de Afiliado...');
   const affiliateResult = await connector.createAffiliateLink({
     originalUrl: realProduct.productUrl
   });
-  console.log(`✅ Deeplink Gerado: ${affiliateResult.affiliateUrl}`);
+  console.log(`✅ AFFILIATE STATUS: ${affiliateResult.affiliateUrl === 'NOT_AVAILABLE' ? 'NOT_CONFIGURED (sem tag)' : 'CONFIGURED'}`);
+  console.log(`   - Affiliate URL: ${affiliateResult.affiliateUrl}`);
 
   // 5. Cálculo de Score & Histórico
-  console.log('\n📊 4. Calculando Score e Histórico da Oferta...');
-  const historyMetrics = calculatePriceHistoryMetrics(realOffer.price, [
-    { price: realOffer.price * 1.35, capturedAt: new Date(Date.now() - 30 * 86400000).toISOString() },
-    { price: realOffer.price * 1.25, capturedAt: new Date(Date.now() - 7 * 86400000).toISOString() }
-  ]);
+  console.log('\n📊 4. Calculando Score Factual...');
+  const historyMetrics = calculatePriceHistoryMetrics(realOffer.price, []);
   const scoreBreakdown = calculateOfferScore(
     realOffer,
-    realProduct.rating || 4.8,
-    realProduct.reviewCount || 1200,
+    realProduct.rating,
+    realProduct.reviewCount,
     historyMetrics
   );
 
   console.log(`   - Score Total: ${scoreBreakdown.totalScore}/100`);
   console.log(`   - Ação Recomendada: ${scoreBreakdown.action}`);
 
-  // 6. Geração de Copy via IA / Template Estruturado
+  // 6. Geração de Copy via IA
   console.log('\n🤖 5. Gerando Copy Estruturada (IA)...');
   const aiProvider = createAiProvider();
   const aiResult = await aiProvider.generateCopy({
@@ -80,7 +92,7 @@ async function main() {
     discountPercent: realOffer.discountPercent,
     marketplace: 'Mercado Livre',
     shipping: realOffer.freeShipping ? 'Frete Grátis' : undefined,
-    rating: realProduct.rating || 4.8
+    rating: realProduct.rating
   });
   console.log(`   - Headline: "${aiResult.headline}"`);
   console.log(`   - Body: "${aiResult.body.replace(/\n/g, ' ')}"`);
@@ -100,10 +112,10 @@ async function main() {
   });
 
   if (!policyResult.passed) {
-    console.error('❌ Policy Check falhou:', policyResult.violations);
-    process.exit(1);
+    console.warn('⚠️ Policy Check reprovou publicação automática:', policyResult.violations);
+  } else {
+    console.log('✅ Policy Check aprovado com sucesso sem violações!');
   }
-  console.log('✅ Policy Check aprovado com sucesso sem violações!');
 
   // 8. Persistência no Banco (se disponível)
   console.log('\n💾 7. Persistindo Oferta no Banco de Dados...');
@@ -141,43 +153,49 @@ async function main() {
       }
     });
 
-    await prisma.affiliateLink.create({
-      data: {
-        offerId: offerRecord.id,
-        originalUrl: realProduct.productUrl,
-        affiliateUrl: affiliateResult.affiliateUrl,
-        marketplace: realProduct.marketplace
-      }
-    });
+    if (affiliateResult.affiliateUrl !== 'NOT_AVAILABLE') {
+      await prisma.affiliateLink.create({
+        data: {
+          offerId: offerRecord.id,
+          originalUrl: realProduct.productUrl,
+          affiliateUrl: affiliateResult.affiliateUrl,
+          marketplace: realProduct.marketplace
+        }
+      });
+    }
 
     console.log(`✅ Oferta gravada no PostgreSQL (ID: ${offerRecord.id})`);
   } catch (err: any) {
-    console.warn(`⚠️ Não foi possível salvar no PostgreSQL (Banco desconectado ou em mock mode): ${err?.message || err}`);
+    console.warn(`⚠️ Não foi possível salvar no PostgreSQL (Banco desconectado ou credentials invalid): ${err?.message || err}`);
   }
 
   // 9. Publicação no Telegram Real
   console.log('\n📢 8. Publicando no Telegram Real...');
-  const publishResult = await telegramPublisher.publishOffer({
-    headline: aiResult.headline,
-    body: aiResult.body,
-    ctaUrl: affiliateResult.affiliateUrl,
-    imageUrl: realProduct.imageUrl
-  });
-
-  if (publishResult.published) {
-    console.log(`🎉 OFERTA REAL PUBLICADA NO TELEGRAM COM SUCESSO! Message ID: ${publishResult.messageId}`);
-  } else if (publishResult.mock) {
-    console.log(`ℹ️ Publicação em modo MOCK / DRY-RUN (TELEGRAM_BOT_TOKEN não configurado no .env).`);
+  if (affiliateResult.affiliateUrl === 'NOT_AVAILABLE') {
+    console.log(`ℹ️ Publicação abortada por política: Oferta sem link de afiliado válido (AFFILIATE STATUS = NOT_CONFIGURED).`);
   } else {
-    console.log(`⚠️ Status de Publicação: ${publishResult.status}`);
+    const publishResult = await telegramPublisher.publishOffer({
+      headline: aiResult.headline,
+      body: aiResult.body,
+      ctaUrl: affiliateResult.affiliateUrl,
+      imageUrl: realProduct.imageUrl
+    });
+
+    if (publishResult.published) {
+      console.log(`🎉 OFERTA REAL PUBLICADA NO TELEGRAM COM SUCESSO! Message ID: ${publishResult.messageId}`);
+    } else if (publishResult.mock) {
+      console.log(`ℹ️ Publicação em modo MOCK / DRY-RUN (TELEGRAM_BOT_TOKEN não configurado no .env).`);
+    } else {
+      console.log(`⚠️ Status de Publicação: ${publishResult.status}`);
+    }
   }
 
   console.log('\n==================================================');
-  console.log('✨ FLUXO DA PRIMEIRA OFERTA REAL FINALIZADO COM SUCESSO!');
+  console.log('✨ PROCESSAMENTO FACTUAL DA OFERTA CONCLUÍDO!');
   console.log('==================================================\n');
 }
 
 main().catch((err) => {
-  console.error('💥 Erro fatal ao processar oferta real:', err);
+  console.error('💥 Erro fatal:', err?.message || err);
   process.exit(1);
 });

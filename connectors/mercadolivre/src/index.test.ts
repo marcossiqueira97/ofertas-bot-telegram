@@ -14,22 +14,47 @@ describe('MercadoLivreConnector', () => {
     expect(health.enabled).toBe(false);
   });
 
-  it('should have affiliateLink capability set to true', () => {
+  it('should evaluate affiliateLink capability to false when MERCADOLIVRE_AFFILIATE_TAG is absent/empty', () => {
     const connector = new MercadoLivreConnector();
-    expect(connector.capabilities.affiliateLink).toBe(true);
+    expect(connector.capabilities.affiliateLink).toBe(false);
   });
 
-  it('should generate real affiliate link with matt_tool tag', async () => {
+  it('should return NOT_AVAILABLE when creating affiliate link without configured tag', async () => {
     const connector = new MercadoLivreConnector();
     const result = await connector.createAffiliateLink({
       originalUrl: 'https://produto.mercadolivre.com.br/MLB3456789'
     });
     expect(result.marketplace).toBe('mercadolivre');
-    expect(result.affiliateUrl).toContain('matt_tool=');
-    expect(result.affiliateUrl).toContain('https://produto.mercadolivre.com.br/MLB3456789?matt_tool=');
+    expect(result.affiliateUrl).toBe('NOT_AVAILABLE');
   });
 
-  it('should throw clean error when API fails without returning fake products', async () => {
+  it('should return affiliateUrl with matt_tool when tag is provided explicitly in subId', async () => {
+    const connector = new MercadoLivreConnector();
+    const result = await connector.createAffiliateLink({
+      originalUrl: 'https://produto.mercadolivre.com.br/MLB3456789',
+      subId: 'my_official_tag'
+    });
+    expect(result.marketplace).toBe('mercadolivre');
+    expect(result.affiliateUrl).toBe('https://produto.mercadolivre.com.br/MLB3456789?matt_tool=my_official_tag');
+  });
+
+  it('should throw clean controlled error on 403 Forbidden without returning fake products', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden'
+      })
+    );
+
+    const connector = new MercadoLivreConnector();
+    await expect(connector.searchProducts({ query: 'iphone' })).rejects.toThrow(
+      'Mercado Livre API error 403: Authentication required. Please check MERCADOLIVRE_ACCESS_TOKEN.'
+    );
+  });
+
+  it('should throw clean controlled error on 500 Server Error', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -45,11 +70,12 @@ describe('MercadoLivreConnector', () => {
     );
   });
 
-  it('should return real products when API succeeds', async () => {
+  it('should return real products when API succeeds with 200 OK', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
+        status: 200,
         json: async () => ({
           results: [
             {
@@ -68,5 +94,37 @@ describe('MercadoLivreConnector', () => {
     expect(products).toHaveLength(1);
     expect(products[0].externalId).toBe('MLB100');
     expect(products[0].title).toBe('Smartphone Real ML');
+  });
+
+  it('should throw controlled error in getProduct() on HTTP error without fallback search', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      })
+    );
+
+    const connector = new MercadoLivreConnector();
+    await expect(connector.getProduct('MLB999')).rejects.toThrow(
+      'Mercado Livre API error fetching product MLB999: 404 Not Found'
+    );
+  });
+
+  it('should throw controlled error in getOffers() on HTTP error without fake prices', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden'
+      })
+    );
+
+    const connector = new MercadoLivreConnector();
+    await expect(connector.getOffers({ productId: 'MLB999' })).rejects.toThrow(
+      'Mercado Livre API error 403 fetching offers for product MLB999: Authentication required. Please check MERCADOLIVRE_ACCESS_TOKEN.'
+    );
   });
 });
