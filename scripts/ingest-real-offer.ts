@@ -7,11 +7,11 @@ import {
 import { createAiProvider } from '@vancod/ai';
 import { telegramPublisher } from '@vancod/telegram-bot';
 import { env } from '@vancod/config';
-import { prisma } from '@vancod/database';
+import { prisma, OfferStatus } from '@vancod/database';
 
 function maskValue(val?: string): string {
   if (!val || val.trim() === '') return 'NOT_CONFIGURED';
-  if (val.length <= 4) return 'CON***ED';
+  if (val.length <= 4) return 'CONFIGURED (***)';
   return `CONFIGURED (${val.substring(0, 2)}***${val.substring(val.length - 2)})`;
 }
 
@@ -43,10 +43,14 @@ async function main() {
   } catch (err: any) {
     console.log(`Produto: ERROR (${err?.message || err})`);
     console.log('Preço: ERROR');
+    console.log('Banco: ERROR');
     console.log('Histórico: ERROR');
     console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
     console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
     console.log('Affiliate: NOT_AVAILABLE');
+    console.log('Policy: REJECTED');
+    console.log('Persistência: ERROR');
+    console.log('Telegram: NOT_PUBLISHED');
     console.log('\n💡 Para realizar buscas reais na API do Mercado Livre, configure MERCADOLIVRE_ACCESS_TOKEN no .env.');
     process.exit(1);
   }
@@ -54,10 +58,14 @@ async function main() {
   if (!realProduct) {
     console.log('Produto: ERROR (Nenhum produto retornado)');
     console.log('Preço: ERROR');
+    console.log('Banco: ERROR');
     console.log('Histórico: ERROR');
     console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
     console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
     console.log('Affiliate: NOT_AVAILABLE');
+    console.log('Policy: REJECTED');
+    console.log('Persistência: ERROR');
+    console.log('Telegram: NOT_PUBLISHED');
     process.exit(1);
   }
   console.log(`Produto: OK (${realProduct.title})`);
@@ -71,51 +79,81 @@ async function main() {
     }
   } catch (err: any) {
     console.log(`Preço: ERROR (${err?.message || err})`);
+    console.log('Banco: ERROR');
     console.log('Histórico: ERROR');
     console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
     console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
     console.log('Affiliate: NOT_AVAILABLE');
+    console.log('Policy: REJECTED');
+    console.log('Persistência: ERROR');
+    console.log('Telegram: NOT_PUBLISHED');
     process.exit(1);
   }
 
   if (!realOffer) {
     console.log('Preço: ERROR');
+    console.log('Banco: ERROR');
     console.log('Histórico: ERROR');
     console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
     console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
     console.log('Affiliate: NOT_AVAILABLE');
+    console.log('Policy: REJECTED');
+    console.log('Persistência: ERROR');
+    console.log('Telegram: NOT_PUBLISHED');
     process.exit(1);
   }
   console.log(`Preço: OK (R$ ${realOffer.price.toFixed(2)})`);
 
-  // 4. Consulta de Histórico Real no Banco de Dados
+  // 4. Conexão ao Banco de Dados e Consulta de Snapshots de Preço Anteriores
+  let marketplaceRecord: any = null;
   let previousSnapshots: { price: number; capturedAt: Date }[] = [];
+
   try {
-    const dbProduct = await prisma.product.findUnique({
+    marketplaceRecord = await prisma.marketplace.upsert({
+      where: { slug: 'mercadolivre' },
+      update: { enabled: true },
+      create: {
+        name: 'Mercado Livre',
+        slug: 'mercadolivre',
+        enabled: true
+      }
+    });
+
+    const existingProduct = await prisma.product.findUnique({
       where: {
-        marketplace_externalId: {
-          marketplace: realProduct.marketplace,
+        marketplaceId_externalId: {
+          marketplaceId: marketplaceRecord.id,
           externalId: realProduct.externalId
         }
       },
       include: {
-        offers: {
+        prices: {
           select: { price: true, capturedAt: true },
           orderBy: { capturedAt: 'asc' }
         }
       }
     });
 
-    if (dbProduct && dbProduct.offers) {
-      previousSnapshots = dbProduct.offers.map((o) => ({
-        price: Number(o.price),
-        capturedAt: o.capturedAt
+    if (existingProduct && existingProduct.prices) {
+      previousSnapshots = existingProduct.prices.map((p) => ({
+        price: Number(p.price),
+        capturedAt: p.capturedAt
       }));
     }
-  } catch {
-    // Database query fallback when db is disconnected
+    console.log('Banco: OK');
+  } catch (err: any) {
+    console.log(`Banco: ERROR (${err?.message || 'Conexão falhou'})`);
+    console.log('Histórico: ERROR');
+    console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
+    console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
+    console.log('Affiliate: NOT_AVAILABLE');
+    console.log('Policy: REJECTED');
+    console.log('Persistência: ERROR');
+    console.log('Telegram: NOT_PUBLISHED');
+    process.exit(1);
   }
 
+  // 5. Cálculo do Histórico Factual
   const historyMetrics = calculatePriceHistoryMetrics(realOffer.price, previousSnapshots);
   console.log('Histórico: OK');
   console.log(`Snapshots anteriores: ${previousSnapshots.length}`);
@@ -123,7 +161,7 @@ async function main() {
   console.log(`Preço atual: R$ ${realOffer.price.toFixed(2)}`);
   console.log(`Menor preço histórico: ${historyMetrics.isHistoricalLow ? 'SIM' : 'NÃO'}`);
 
-  // 5. Status do Afiliado
+  // 6. Configuração e Geração de Afiliado
   console.log(`\nmatt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
   console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
 
@@ -135,10 +173,10 @@ async function main() {
   console.log(`Affiliate: ${affiliateStatus}`);
 
   if (affiliateResult.affiliateUrl !== 'NOT_AVAILABLE') {
-    console.log(`\n🔗 Link Gerado: ${affiliateResult.affiliateUrl}`);
+    console.log(`🔗 Link Gerado: ${affiliateResult.affiliateUrl}`);
   }
 
-  // 6. Score & Copy & Policy
+  // 7. Score, Copy IA e Policy Check
   const scoreBreakdown = calculateOfferScore(
     realOffer,
     realProduct.rating,
@@ -169,81 +207,119 @@ async function main() {
     body: aiResult.body
   });
 
+  console.log(`Policy: ${policyResult.passed ? 'APPROVED' : 'REJECTED'}`);
   if (!policyResult.passed) {
-    console.warn('\n⚠️ Policy Check reprovou publicação automática:', policyResult.violations);
-  } else {
-    console.log('\n✅ Policy Check aprovado com sucesso sem violações!');
+    console.warn('⚠️ Policy Check reprovou publicação automática:', policyResult.violations);
   }
 
-  // 7. Persistência no Banco
+  // 8. Persistência Obrigatória no PostgreSQL (Antes do Telegram)
+  let persistedOfferRecord: any = null;
   try {
     const productRecord = await prisma.product.upsert({
       where: {
-        marketplace_externalId: {
-          marketplace: realProduct.marketplace,
+        marketplaceId_externalId: {
+          marketplaceId: marketplaceRecord.id,
           externalId: realProduct.externalId
         }
       },
       update: {
         title: realProduct.title,
-        imageUrl: realProduct.imageUrl
+        brand: realProduct.brand,
+        description: realProduct.description,
+        imageUrl: realProduct.imageUrl,
+        productUrl: realProduct.productUrl,
+        rating: realProduct.rating,
+        reviewCount: realProduct.reviewCount
       },
       create: {
-        marketplace: realProduct.marketplace,
+        marketplaceId: marketplaceRecord.id,
         externalId: realProduct.externalId,
         title: realProduct.title,
-        productUrl: realProduct.productUrl,
+        brand: realProduct.brand,
+        description: realProduct.description,
         imageUrl: realProduct.imageUrl,
-        brand: realProduct.brand
+        productUrl: realProduct.productUrl,
+        rating: realProduct.rating,
+        reviewCount: realProduct.reviewCount
       }
     });
 
-    const offerRecord = await prisma.offer.create({
+    await prisma.productPrice.create({
+      data: {
+        productId: productRecord.id,
+        price: realOffer.price,
+        oldPrice: realOffer.oldPrice,
+        currency: realOffer.currency || 'BRL'
+      }
+    });
+
+    const offerStatus: OfferStatus = scoreBreakdown.action === 'AUTO_PUBLISH' ? 'AUTO_APPROVED' : 'PENDING';
+
+    persistedOfferRecord = await prisma.offer.create({
       data: {
         productId: productRecord.id,
         price: realOffer.price,
         oldPrice: realOffer.oldPrice,
         discountPercent: realOffer.discountPercent,
-        currency: realOffer.currency,
+        currency: realOffer.currency || 'BRL',
+        availability: realOffer.availability || 'IN_STOCK',
+        seller: realOffer.seller,
+        freeShipping: realOffer.freeShipping || false,
         score: scoreBreakdown.totalScore,
-        status: scoreBreakdown.action === 'AUTO_PUBLISH' ? 'AUTO_APPROVED' : 'PENDING_REVIEW'
+        status: offerStatus
       }
     });
 
     if (affiliateResult.affiliateUrl !== 'NOT_AVAILABLE') {
       await prisma.affiliateLink.create({
         data: {
-          offerId: offerRecord.id,
+          offerId: persistedOfferRecord.id,
           originalUrl: realProduct.productUrl,
-          affiliateUrl: affiliateResult.affiliateUrl,
-          marketplace: realProduct.marketplace
+          affiliateUrl: affiliateResult.affiliateUrl
         }
       });
     }
 
-    console.log(`\n💾 Oferta gravada no PostgreSQL (ID: ${offerRecord.id})`);
-  } catch (err: any) {
-    console.warn(`\n⚠️ Não foi possível salvar no PostgreSQL (Banco desconectado ou credentials invalid): ${err?.message || err}`);
-  }
-
-  // 8. Publicação no Telegram Real
-  console.log('\n📢 Publicando no Telegram Real...');
-  if (affiliateResult.affiliateUrl === 'NOT_AVAILABLE') {
-    console.log(`ℹ️ Publicação abortada por política: Oferta sem link de afiliado válido (Affiliate: NOT_AVAILABLE).`);
-  } else {
-    const publishResult = await telegramPublisher.publishOffer({
-      headline: aiResult.headline,
-      body: aiResult.body,
-      ctaUrl: affiliateResult.affiliateUrl,
-      imageUrl: realProduct.imageUrl
+    await prisma.aiGeneration.create({
+      data: {
+        offerId: persistedOfferRecord.id,
+        provider: 'mock',
+        promptUsed: 'ingest-real-offer',
+        headline: aiResult.headline,
+        body: aiResult.body,
+        cta: aiResult.cta,
+        riskFlags: aiResult.riskFlags || []
+      }
     });
 
-    if (publishResult.published) {
-      console.log(`🎉 OFERTA REAL PUBLICADA NO TELEGRAM COM SUCESSO! Message ID: ${publishResult.messageId}`);
-    } else if (publishResult.mock) {
-      console.log(`ℹ️ Publicação em modo MOCK / DRY-RUN (TELEGRAM_BOT_TOKEN não configurado no .env).`);
-    } else {
-      console.log(`⚠️ Status de Publicação: ${publishResult.status}`);
+    console.log('Persistência: OK');
+  } catch (err: any) {
+    console.log(`Persistência: ERROR (${err?.message || err})`);
+    console.log('Telegram: NOT_PUBLISHED');
+    process.exit(1);
+  }
+
+  // 9. Publicação no Telegram Real (Somente se Persistência OK + Policy APPROVED + Link Válido)
+  if (affiliateResult.affiliateUrl === 'NOT_AVAILABLE' || !policyResult.passed) {
+    console.log('Telegram: NOT_PUBLISHED');
+  } else {
+    try {
+      const publishResult = await telegramPublisher.publishOffer({
+        headline: aiResult.headline,
+        body: aiResult.body,
+        ctaUrl: affiliateResult.affiliateUrl,
+        imageUrl: realProduct.imageUrl
+      });
+
+      if (publishResult.published) {
+        console.log('Telegram: PUBLISHED');
+      } else if (publishResult.mock) {
+        console.log('Telegram: MOCK');
+      } else {
+        console.log('Telegram: NOT_PUBLISHED');
+      }
+    } catch {
+      console.log('Telegram: NOT_PUBLISHED');
     }
   }
 
