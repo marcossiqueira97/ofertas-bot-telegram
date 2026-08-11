@@ -14,12 +14,12 @@ describe('MercadoLivreConnector', () => {
     expect(health.enabled).toBe(false);
   });
 
-  it('should evaluate affiliateLink capability to false when MERCADOLIVRE_AFFILIATE_TAG is absent/empty', () => {
+  it('should evaluate affiliateLink capability to false when MERCADOLIVRE_MATT_WORD is absent/empty', () => {
     const connector = new MercadoLivreConnector();
     expect(connector.capabilities.affiliateLink).toBe(false);
   });
 
-  it('should return NOT_AVAILABLE when creating affiliate link without configured tag', async () => {
+  it('should return NOT_AVAILABLE when creating affiliate link without matt_word', async () => {
     const connector = new MercadoLivreConnector();
     const result = await connector.createAffiliateLink({
       originalUrl: 'https://produto.mercadolivre.com.br/MLB3456789'
@@ -28,14 +28,40 @@ describe('MercadoLivreConnector', () => {
     expect(result.affiliateUrl).toBe('NOT_AVAILABLE');
   });
 
-  it('should return affiliateUrl with matt_tool when tag is provided explicitly in subId', async () => {
+  it('should generate affiliate URL with only matt_word when subId is provided', async () => {
     const connector = new MercadoLivreConnector();
     const result = await connector.createAffiliateLink({
       originalUrl: 'https://produto.mercadolivre.com.br/MLB3456789',
-      subId: 'my_official_tag'
+      subId: 'affiliate_user_123'
     });
     expect(result.marketplace).toBe('mercadolivre');
-    expect(result.affiliateUrl).toBe('https://produto.mercadolivre.com.br/MLB3456789?matt_tool=my_official_tag');
+    expect(result.affiliateUrl).toBe('https://produto.mercadolivre.com.br/MLB3456789?matt_word=affiliate_user_123');
+  });
+
+  it('should preserve existing query parameters when appending matt_word', async () => {
+    const connector = new MercadoLivreConnector();
+    const originalUrl = 'https://produto.mercadolivre.com.br/MLB3456789?utm_source=google&pdp_filters=category:123';
+    const result = await connector.createAffiliateLink({
+      originalUrl,
+      subId: 'affiliate_user_123'
+    });
+    expect(result.affiliateUrl).toContain('utm_source=google');
+    expect(result.affiliateUrl).toContain('pdp_filters=category%3A123');
+    expect(result.affiliateUrl).toContain('matt_word=affiliate_user_123');
+  });
+
+  it('should update existing matt_word parameter without duplication', async () => {
+    const connector = new MercadoLivreConnector();
+    const originalUrl = 'https://produto.mercadolivre.com.br/MLB3456789?matt_word=old_id&utm_source=google';
+    const result = await connector.createAffiliateLink({
+      originalUrl,
+      subId: 'new_affiliate_id'
+    });
+
+    const parsed = new URL(result.affiliateUrl);
+    expect(parsed.searchParams.getAll('matt_word')).toHaveLength(1);
+    expect(parsed.searchParams.get('matt_word')).toBe('new_affiliate_id');
+    expect(parsed.searchParams.get('utm_source')).toBe('google');
   });
 
   it('should throw clean controlled error on 403 Forbidden without returning fake products', async () => {

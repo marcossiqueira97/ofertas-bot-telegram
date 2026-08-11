@@ -9,69 +9,107 @@ import { telegramPublisher } from '@vancod/telegram-bot';
 import { env } from '@vancod/config';
 import { prisma } from '@vancod/database';
 
+function maskValue(val?: string): string {
+  if (!val || val.trim() === '') return 'NOT_CONFIGURED';
+  if (val.length <= 4) return '***';
+  return `${val.substring(0, 2)}***${val.substring(val.length - 2)}`;
+}
+
 async function main() {
   console.log('\n==================================================');
-  console.log('🚀 VANCOD OFERTAS — INGESTÃO E PROCESSAMENTO FACTUAL DE OFERTA');
+  console.log('🚀 VANCOD OFERTAS — INGESTÃO E PROCESSANDO OFERTA REAL');
   console.log('==================================================\n');
 
-  console.log('STATUS DAS CONFIGURAÇÕES:');
-  console.log(`• REAL API: Mercado Livre Catalog API`);
-  console.log(`• ACCESS TOKEN: ${env.MERCADOLIVRE_ACCESS_TOKEN ? 'Configurado' : 'Ausente (Necessário para buscas autenticadas na API)'}`);
-  console.log(`• AFFILIATE TAG: ${env.MERCADOLIVRE_AFFILIATE_TAG ? env.MERCADOLIVRE_AFFILIATE_TAG : 'Ausente (Links serão emitidos como NOT_AVAILABLE)'}`);
-
+  console.log('Mercado Livre');
   const connector = new MercadoLivreConnector(true);
 
   // 1. Health check
-  const health = await connector.healthCheck();
-  console.log(`\n📌 Conector: ${health.marketplace} | Status: ${health.status} | Latência: ${health.latencyMs}ms`);
-  console.log(`   Affiliate Link Capability: ${connector.capabilities.affiliateLink ? 'Ativo' : 'Inativo (AFFILIATE STATUS = NOT_CONFIGURED)'}`);
-
-  // 2. Ingestão factual em tempo real
-  console.log('\n🔎 1. Buscando REAL PRODUCT na API oficial...');
-  let searchResults;
+  let healthOk = false;
   try {
-    searchResults = await connector.searchProducts({ query: 'smartphone', limit: 1 });
+    const health = await connector.healthCheck();
+    healthOk = health.status === 'ok';
+  } catch {
+    healthOk = false;
+  }
+  console.log(`API: ${healthOk ? 'OK' : 'ERROR'}`);
+
+  // 2. Busca de Produto Real
+  let realProduct = null;
+  try {
+    const searchResults = await connector.searchProducts({ query: 'smartphone', limit: 1 });
+    if (searchResults && searchResults.length > 0) {
+      realProduct = searchResults[0];
+    }
   } catch (err: any) {
-    console.error(`\n❌ FALHA NA BUSCA DE REAL PRODUCT DA API: ${err?.message || err}`);
-    console.error(`💡 Para realizar buscas reais na API do Mercado Livre, configure MERCADOLIVRE_ACCESS_TOKEN no .env.`);
+    console.log(`Produto: ERROR (${err?.message || err})`);
+    console.log('Preço: ERROR');
+    console.log('Histórico: ERROR');
+    console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
+    console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
+    console.log('Affiliate: NOT_AVAILABLE');
+    console.log('\n💡 Para realizar buscas reais na API do Mercado Livre, configure MERCADOLIVRE_ACCESS_TOKEN no .env.');
     process.exit(1);
   }
 
-  if (!searchResults || searchResults.length === 0) {
-    console.error('❌ Nenhum produto retornado pela API real.');
+  if (!realProduct) {
+    console.log('Produto: ERROR (Nenhum produto retornado)');
+    console.log('Preço: ERROR');
+    console.log('Histórico: ERROR');
+    console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
+    console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
+    console.log('Affiliate: NOT_AVAILABLE');
+    process.exit(1);
+  }
+  console.log(`Produto: OK (${realProduct.title})`);
+
+  // 3. Busca de Oferta Real
+  let realOffer = null;
+  try {
+    const offers = await connector.getOffers({ productId: realProduct.externalId });
+    if (offers && offers.length > 0) {
+      realOffer = offers[0];
+    }
+  } catch (err: any) {
+    console.log(`Preço: ERROR (${err?.message || err})`);
+    console.log('Histórico: ERROR');
+    console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
+    console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
+    console.log('Affiliate: NOT_AVAILABLE');
     process.exit(1);
   }
 
-  const realProduct = searchResults[0];
-  console.log(`✅ REAL PRODUCT: ${realProduct.title}`);
-  console.log(`   - ID Externo: ${realProduct.externalId}`);
-  console.log(`   - URL Original: ${realProduct.productUrl}`);
-  console.log(`   - Imagem: ${realProduct.imageUrl || 'N/A'}`);
-
-  // 3. Busca de oferta e preço em tempo real
-  console.log('\n💵 2. Obteve REAL PRICE em tempo real...');
-  const offers = await connector.getOffers({ productId: realProduct.externalId });
-  if (!offers || offers.length === 0) {
-    console.error('❌ Nenhuma oferta retornada pela API real para o produto.');
+  if (!realOffer) {
+    console.log('Preço: ERROR');
+    console.log('Histórico: ERROR');
+    console.log(`matt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
+    console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
+    console.log('Affiliate: NOT_AVAILABLE');
     process.exit(1);
   }
-  const realOffer = offers[0];
-  console.log(`✅ REAL PRICE: R$ ${realOffer.price.toFixed(2)}`);
-  console.log(`   - Preço Antigo: ${realOffer.oldPrice ? `R$ ${realOffer.oldPrice.toFixed(2)}` : 'N/A'}`);
-  console.log(`   - Desconto: ${realOffer.discountPercent ? `${realOffer.discountPercent}%` : 'N/A'}`);
-  console.log(`   - Frete Grátis: ${realOffer.freeShipping ? 'Sim' : 'Não'}`);
+  console.log(`Preço: OK (R$ ${realOffer.price.toFixed(2)})`);
 
-  // 4. Deeplink de Afiliado
-  console.log('\n🔗 3. Gerando Deeplink de Afiliado...');
+  // 4. Histórico
+  const historyMetrics = calculatePriceHistoryMetrics(realOffer.price, []);
+  console.log('Histórico: OK');
+
+  // 5. Status do Afiliado
+  const mattWordStatus = env.MERCADOLIVRE_MATT_WORD ? `CONFIGURED (${maskValue(env.MERCADOLIVRE_MATT_WORD)})` : 'NOT_CONFIGURED';
+  const mattToolStatus = env.MERCADOLIVRE_MATT_TOOL ? `CONFIGURED (${maskValue(env.MERCADOLIVRE_MATT_TOOL)})` : 'NOT_CONFIGURED';
+  console.log(`matt_word: ${mattWordStatus}`);
+  console.log(`matt_tool: ${mattToolStatus}`);
+
   const affiliateResult = await connector.createAffiliateLink({
     originalUrl: realProduct.productUrl
   });
-  console.log(`✅ AFFILIATE STATUS: ${affiliateResult.affiliateUrl === 'NOT_AVAILABLE' ? 'NOT_CONFIGURED (sem tag)' : 'CONFIGURED'}`);
-  console.log(`   - Affiliate URL: ${affiliateResult.affiliateUrl}`);
 
-  // 5. Cálculo de Score & Histórico
-  console.log('\n📊 4. Calculando Score Factual...');
-  const historyMetrics = calculatePriceHistoryMetrics(realOffer.price, []);
+  const affiliateStatus = affiliateResult.affiliateUrl !== 'NOT_AVAILABLE' ? 'AVAILABLE' : 'NOT_AVAILABLE';
+  console.log(`Affiliate: ${affiliateStatus}`);
+
+  if (affiliateResult.affiliateUrl !== 'NOT_AVAILABLE') {
+    console.log(`\n🔗 Link Gerado: ${affiliateResult.affiliateUrl}`);
+  }
+
+  // 6. Score & Copy & Policy
   const scoreBreakdown = calculateOfferScore(
     realOffer,
     realProduct.rating,
@@ -79,11 +117,6 @@ async function main() {
     historyMetrics
   );
 
-  console.log(`   - Score Total: ${scoreBreakdown.totalScore}/100`);
-  console.log(`   - Ação Recomendada: ${scoreBreakdown.action}`);
-
-  // 6. Geração de Copy via IA
-  console.log('\n🤖 5. Gerando Copy Estruturada (IA)...');
   const aiProvider = createAiProvider();
   const aiResult = await aiProvider.generateCopy({
     title: realProduct.title,
@@ -94,11 +127,7 @@ async function main() {
     shipping: realOffer.freeShipping ? 'Frete Grátis' : undefined,
     rating: realProduct.rating
   });
-  console.log(`   - Headline: "${aiResult.headline}"`);
-  console.log(`   - Body: "${aiResult.body.replace(/\n/g, ' ')}"`);
 
-  // 7. Checagem Determinística de Política
-  console.log('\n🛡️ 6. Executando Policy Check Determinístico...');
   const policyResult = validateOfferPolicy({
     price: realOffer.price,
     marketplace: realProduct.marketplace,
@@ -112,13 +141,12 @@ async function main() {
   });
 
   if (!policyResult.passed) {
-    console.warn('⚠️ Policy Check reprovou publicação automática:', policyResult.violations);
+    console.warn('\n⚠️ Policy Check reprovou publicação automática:', policyResult.violations);
   } else {
-    console.log('✅ Policy Check aprovado com sucesso sem violações!');
+    console.log('\n✅ Policy Check aprovado com sucesso sem violações!');
   }
 
-  // 8. Persistência no Banco (se disponível)
-  console.log('\n💾 7. Persistindo Oferta no Banco de Dados...');
+  // 7. Persistência no Banco
   try {
     const productRecord = await prisma.product.upsert({
       where: {
@@ -164,15 +192,15 @@ async function main() {
       });
     }
 
-    console.log(`✅ Oferta gravada no PostgreSQL (ID: ${offerRecord.id})`);
+    console.log(`\n💾 Oferta gravada no PostgreSQL (ID: ${offerRecord.id})`);
   } catch (err: any) {
-    console.warn(`⚠️ Não foi possível salvar no PostgreSQL (Banco desconectado ou credentials invalid): ${err?.message || err}`);
+    console.warn(`\n⚠️ Não foi possível salvar no PostgreSQL (Banco desconectado ou credentials invalid): ${err?.message || err}`);
   }
 
-  // 9. Publicação no Telegram Real
-  console.log('\n📢 8. Publicando no Telegram Real...');
+  // 8. Publicação no Telegram Real
+  console.log('\n📢 Publicando no Telegram Real...');
   if (affiliateResult.affiliateUrl === 'NOT_AVAILABLE') {
-    console.log(`ℹ️ Publicação abortada por política: Oferta sem link de afiliado válido (AFFILIATE STATUS = NOT_CONFIGURED).`);
+    console.log(`ℹ️ Publicação abortada por política: Oferta sem link de afiliado válido (Affiliate: NOT_AVAILABLE).`);
   } else {
     const publishResult = await telegramPublisher.publishOffer({
       headline: aiResult.headline,
@@ -191,7 +219,7 @@ async function main() {
   }
 
   console.log('\n==================================================');
-  console.log('✨ PROCESSAMENTO FACTUAL DA OFERTA CONCLUÍDO!');
+  console.log('✨ PROCESSAMENTO CONCLUÍDO COM SUCESSO!');
   console.log('==================================================\n');
 }
 

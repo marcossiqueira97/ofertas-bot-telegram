@@ -22,11 +22,12 @@ export class MercadoLivreConnector implements MarketplaceConnector {
   }
 
   get capabilities(): ConnectorCapabilities {
+    const hasMattWord = Boolean(env.MERCADOLIVRE_MATT_WORD && env.MERCADOLIVRE_MATT_WORD.trim() !== '');
     return {
       productSearch: true,
       productDetails: true,
       price: true,
-      affiliateLink: Boolean(env.MERCADOLIVRE_AFFILIATE_TAG && env.MERCADOLIVRE_AFFILIATE_TAG.trim() !== ''),
+      affiliateLink: hasMattWord,
       coupons: false,
       salesTracking: false
     };
@@ -163,9 +164,10 @@ export class MercadoLivreConnector implements MarketplaceConnector {
   }
 
   async createAffiliateLink(input: AffiliateLinkInput): Promise<AffiliateLinkResult> {
-    const tag = (input.subId || env.MERCADOLIVRE_AFFILIATE_TAG || '').trim();
+    const mattWord = (input.subId || env.MERCADOLIVRE_MATT_WORD || '').trim();
+    const mattTool = (env.MERCADOLIVRE_MATT_TOOL || '').trim();
 
-    if (!tag) {
+    if (!mattWord) {
       return {
         originalUrl: input.originalUrl,
         affiliateUrl: 'NOT_AVAILABLE',
@@ -173,13 +175,25 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       };
     }
 
-    const separator = input.originalUrl.includes('?') ? '&' : '?';
-    const affiliateUrl = `${input.originalUrl}${separator}matt_tool=${encodeURIComponent(tag)}`;
+    try {
+      const url = new URL(input.originalUrl);
+      url.searchParams.set('matt_word', mattWord);
 
-    return {
-      originalUrl: input.originalUrl,
-      affiliateUrl,
-      marketplace: this.name
-    };
+      if (mattTool) {
+        url.searchParams.set('matt_tool', mattTool);
+      }
+
+      return {
+        originalUrl: input.originalUrl,
+        affiliateUrl: url.toString(),
+        marketplace: this.name
+      };
+    } catch {
+      return {
+        originalUrl: input.originalUrl,
+        affiliateUrl: 'NOT_AVAILABLE',
+        marketplace: this.name
+      };
+    }
   }
 }
