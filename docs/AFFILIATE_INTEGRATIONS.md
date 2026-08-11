@@ -40,7 +40,7 @@ Connector desacoplado e funcional em modo resiliência.
 
 Busca em tempo real de produtos da plataforma Mercado Livre Brasil via API oficial pública (`https://api.mercadolibre.com/sites/MLB/search`).
 
-Links de afiliado parametrizados por `matt_tool` (`MERCADOLIVRE_AFFILIATE_TAG`).
+Links de afiliado parametrizados por `matt_word` (`MERCADOLIVRE_MATT_WORD`) e opcionalmente `matt_tool` (`MERCADOLIVRE_MATT_TOOL`).
 
 ## Magalu
 

@@ -29,7 +29,7 @@ Plataforma completa e modular para automação, qualificação por IA e publica�
 - **Proteção SSRF**: Validador de domínio e URLs permitidas (`validateProductUrl`).
 - **Resiliência Externa**: Wrapper `withResilience` com timeout configurável, retries com backoff exponencial, jitter e tratamento de Rate Limit.
 - **Geração de Copy por IA**: IA factual que utiliza exclusivamente dados verificados da oferta (sem alucinação).
-- **Links de Afiliados**: Parametrizados por variáveis de ambiente (`SHOPEE_AFFILIATE_ID`, `ALIEXPRESS_TRACKING_ID`, `AMAZON_ASSOCIATE_TAG`, `MERCADOLIVRE_AFFILIATE_TAG`, `MAGALU_STORE_NAME`).
+- **Links de Afiliados**: Parametrizados por variáveis de ambiente (`SHOPEE_AFFILIATE_ID`, `ALIEXPRESS_TRACKING_ID`, `AMAZON_ASSOCIATE_TAG`, `MERCADOLIVRE_MATT_WORD`, `MERCADOLIVRE_MATT_TOOL`, `MAGALU_STORE_NAME`).
 - **Telegram Bot & Publisher**: Postagem formatada em Markdown com foto, preço com desconto e botão CTA direto para a oferta de afiliado.
 - **Painel Dashboard Next.js**: Aba interativa de ofertas, aprovação manual, alertas de preço, agendamento de posts, vitrine pública (`/vitrine`) e controle de status de integração 3D.
 
@@ -58,7 +58,8 @@ TELEGRAM_CHANNEL_ID="@vancod_ofertas_channel"
 SHOPEE_AFFILIATE_ID="seu_id_shopee"
 ALIEXPRESS_TRACKING_ID="seu_tracking_id_ali"
 AMAZON_ASSOCIATE_TAG="sua_tag_amazon-20"
-MERCADOLIVRE_AFFILIATE_TAG="sua_tag_ml"
+MERCADOLIVRE_MATT_WORD="seu_matt_word_ml"
+MERCADOLIVRE_MATT_TOOL="seu_matt_tool_ml"
 MAGALU_STORE_NAME="sua_loja_magazinevoce"
 ```
 

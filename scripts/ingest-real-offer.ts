@@ -11,13 +11,13 @@ import { prisma } from '@vancod/database';
 
 function maskValue(val?: string): string {
   if (!val || val.trim() === '') return 'NOT_CONFIGURED';
-  if (val.length <= 4) return '***';
-  return `${val.substring(0, 2)}***${val.substring(val.length - 2)}`;
+  if (val.length <= 4) return 'CON***ED';
+  return `CONFIGURED (${val.substring(0, 2)}***${val.substring(val.length - 2)})`;
 }
 
 async function main() {
   console.log('\n==================================================');
-  console.log('🚀 VANCOD OFERTAS — INGESTÃO E PROCESSANDO OFERTA REAL');
+  console.log('🚀 VANCOD OFERTAS — INGESTÃO E PROCESSAMENTO FACTUAL');
   console.log('==================================================\n');
 
   console.log('Mercado Livre');
@@ -88,21 +88,50 @@ async function main() {
   }
   console.log(`Preço: OK (R$ ${realOffer.price.toFixed(2)})`);
 
-  // 4. Histórico
-  const historyMetrics = calculatePriceHistoryMetrics(realOffer.price, []);
+  // 4. Consulta de Histórico Real no Banco de Dados
+  let previousSnapshots: { price: number; capturedAt: Date }[] = [];
+  try {
+    const dbProduct = await prisma.product.findUnique({
+      where: {
+        marketplace_externalId: {
+          marketplace: realProduct.marketplace,
+          externalId: realProduct.externalId
+        }
+      },
+      include: {
+        offers: {
+          select: { price: true, capturedAt: true },
+          orderBy: { capturedAt: 'asc' }
+        }
+      }
+    });
+
+    if (dbProduct && dbProduct.offers) {
+      previousSnapshots = dbProduct.offers.map((o) => ({
+        price: Number(o.price),
+        capturedAt: o.capturedAt
+      }));
+    }
+  } catch {
+    // Database query fallback when db is disconnected
+  }
+
+  const historyMetrics = calculatePriceHistoryMetrics(realOffer.price, previousSnapshots);
   console.log('Histórico: OK');
+  console.log(`Snapshots anteriores: ${previousSnapshots.length}`);
+  console.log(`Menor preço histórico: ${historyMetrics.lowestPrice90d ? `R$ ${historyMetrics.lowestPrice90d.toFixed(2)}` : 'N/A'}`);
+  console.log(`Preço atual: R$ ${realOffer.price.toFixed(2)}`);
+  console.log(`Menor preço histórico: ${historyMetrics.isHistoricalLow ? 'SIM' : 'NÃO'}`);
 
   // 5. Status do Afiliado
-  const mattWordStatus = env.MERCADOLIVRE_MATT_WORD ? `CONFIGURED (${maskValue(env.MERCADOLIVRE_MATT_WORD)})` : 'NOT_CONFIGURED';
-  const mattToolStatus = env.MERCADOLIVRE_MATT_TOOL ? `CONFIGURED (${maskValue(env.MERCADOLIVRE_MATT_TOOL)})` : 'NOT_CONFIGURED';
-  console.log(`matt_word: ${mattWordStatus}`);
-  console.log(`matt_tool: ${mattToolStatus}`);
+  console.log(`\nmatt_word: ${maskValue(env.MERCADOLIVRE_MATT_WORD)}`);
+  console.log(`matt_tool: ${maskValue(env.MERCADOLIVRE_MATT_TOOL)}`);
 
   const affiliateResult = await connector.createAffiliateLink({
     originalUrl: realProduct.productUrl
   });
 
-  const affiliateStatus = affiliateResult.affiliateUrl !== 'NOT_AVAILABLE' ? 'AVAILABLE' : 'NOT_AVAILABLE';
+  const affiliateStatus = affiliateResult.affiliateUrl !== 'NOT_AVAILABLE' ? 'AFFILIATE_LINK_AVAILABLE' : 'NOT_AVAILABLE';
   console.log(`Affiliate: ${affiliateStatus}`);
 
   if (affiliateResult.affiliateUrl !== 'NOT_AVAILABLE') {

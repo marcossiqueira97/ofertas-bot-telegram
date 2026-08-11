@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MercadoLivreConnector } from './index';
+import { env } from '@vancod/config';
 
 describe('MercadoLivreConnector', () => {
   beforeEach(() => {
@@ -12,6 +13,10 @@ describe('MercadoLivreConnector', () => {
     expect(health.status).toBe('ok');
     expect(health.marketplace).toBe('mercadolivre');
     expect(health.enabled).toBe(false);
+  });
+
+  it('should NOT have legacy MERCADOLIVRE_AFFILIATE_TAG in config schema', () => {
+    expect((env as any).MERCADOLIVRE_AFFILIATE_TAG).toBeUndefined();
   });
 
   it('should evaluate affiliateLink capability to false when MERCADOLIVRE_MATT_WORD is absent/empty', () => {
@@ -28,13 +33,14 @@ describe('MercadoLivreConnector', () => {
     expect(result.affiliateUrl).toBe('NOT_AVAILABLE');
   });
 
-  it('should generate affiliate URL with only matt_word when subId is provided', async () => {
+  it('should generate affiliate URL with AFFILIATE_LINK_AVAILABLE status when matt_word is configured', async () => {
     const connector = new MercadoLivreConnector();
     const result = await connector.createAffiliateLink({
       originalUrl: 'https://produto.mercadolivre.com.br/MLB3456789',
       subId: 'affiliate_user_123'
     });
     expect(result.marketplace).toBe('mercadolivre');
+    expect(result.affiliateUrl).not.toBe('NOT_AVAILABLE');
     expect(result.affiliateUrl).toBe('https://produto.mercadolivre.com.br/MLB3456789?matt_word=affiliate_user_123');
   });
 
