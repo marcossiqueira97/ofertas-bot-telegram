@@ -9,7 +9,7 @@
     "db:generate": "pnpm --filter @vancod/database db:generate",
     "db:push": "pnpm --filter @vancod/database db:push",
     "db:seed": "pnpm --filter @vancod/database db:seed",
-    "ingest:real": "tsx scripts/ingest-real-offer.ts"
+    "ingest:real": "pnpm --filter @vancod/database exec tsx ../../scripts/ingest-real-offer.ts"
   },
   "devDependencies": {
     "turbo": "^2.4.0",
