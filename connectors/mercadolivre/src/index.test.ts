@@ -14,18 +14,19 @@ describe('MercadoLivreConnector', () => {
     expect(health.enabled).toBe(false);
   });
 
-  it('should have affiliateLink capability set to false', () => {
+  it('should have affiliateLink capability set to true', () => {
     const connector = new MercadoLivreConnector();
-    expect(connector.capabilities.affiliateLink).toBe(false);
+    expect(connector.capabilities.affiliateLink).toBe(true);
   });
 
-  it('should return NOT_AVAILABLE for affiliate links without official API', async () => {
+  it('should generate real affiliate link with matt_tool tag', async () => {
     const connector = new MercadoLivreConnector();
     const result = await connector.createAffiliateLink({
       originalUrl: 'https://produto.mercadolivre.com.br/MLB3456789'
     });
     expect(result.marketplace).toBe('mercadolivre');
-    expect(result.affiliateUrl).toBe('NOT_AVAILABLE');
+    expect(result.affiliateUrl).toContain('matt_tool=');
+    expect(result.affiliateUrl).toContain('https://produto.mercadolivre.com.br/MLB3456789?matt_tool=');
   });
 
   it('should throw clean error when API fails without returning fake products', async () => {

@@ -30,6 +30,7 @@ const envSchema = z.object({
   AMAZON_ASSOCIATE_TAG: z.string().optional().default('vancod-20'),
 
   MERCADOLIVRE_ENABLED: z.coerce.boolean().default(false),
+  MERCADOLIVRE_ACCESS_TOKEN: z.string().optional().default(''),
   MERCADOLIVRE_AFFILIATE_TAG: z.string().optional().default('vancod_ml_aff'),
 
   MAGALU_ENABLED: z.coerce.boolean().default(false),
